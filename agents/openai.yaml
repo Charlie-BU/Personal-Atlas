@@ -1,4 +1,4 @@
 interface:
   display_name: "个人信息罗盘"
-  short_description: "通过图导航检索和维护个人信息，支持来源追踪、时间线与 Git 同步"
+  short_description: "通过图导航检索和维护个人信息，仅用 GitHub 远端保存，支持来源追踪与时间线"
   default_prompt: "使用 $personal-atlas 整理这些个人资料，保存来源，并同步图目录。"

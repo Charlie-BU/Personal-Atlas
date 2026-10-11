@@ -1,6 +1,6 @@
 # 记录与 JSON 图协议 v1
 
-权威数据为 vault.json、records/、sources/、operations/。graph/、manifests/ 为可完全重建的确定性生成物，无额外数据库作为唯一信息源。
+权威数据为远端仓库 vault.json、records/、sources/、operations/；skill/personal-atlas/ 保存完整 Skill 静态副本并纳入清单。graph/、manifests/ 为可完全重建的确定性生成物，无额外数据库作为唯一信息源。
 
 ## 记录
 

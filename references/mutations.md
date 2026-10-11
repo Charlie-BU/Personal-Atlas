@@ -1,10 +1,10 @@
 # 增删改与图同步
 
-所有增删改使用 JSON 操作包，经 apply 发布。脚本锁住专用仓库，先验证再一次更新正文、图、manifest 和 Git 提交。图不单独手工维护。
+所有增删改使用 JSON 操作包，经 apply 发布。脚本在内存验证提案，再经 GitHub API 将正文、图、manifest 与操作记录发布为一个远端提交。图不单独手工维护。
 
 ## 操作包
 
-先 status 取得 snapshot，read 取得完整 meta/body 和 sha256。操作包保存在当前任务临时目录，不放进数据仓库。用 JSON 序列化写文件，不将原文拼接为 shell 命令。
+先 status 取得 snapshot，read 取得完整 meta/body 和 sha256。操作包只保存在内存，通过 stdin 传给脚本；不写临时文件，不将原文拼接为 shell 命令。
 
 ```json
 {
@@ -30,7 +30,7 @@
 ```
 
 ```text
-python3 <skill>/scripts/atlas.py apply --plan <绝对路径的操作包.json>
+python3 -B <skill>/scripts/atlas.py apply --stdin
 ```
 
 - 新记录 put 不带 expected_sha256。
@@ -62,14 +62,12 @@ python3 <skill>/scripts/atlas.py apply --plan <绝对路径的操作包.json>
 
 ## 事务与失败
 
-1. 文件操作前锁、检查当前提交、验证记录哈希。
-2. 构造完整提案，检查格式、时间、来源、覆盖单元、ID 和关系。
-3. 确定性生成图，记录受影响文件的恢复日志。
-4. 写入文件与 Git 对象，通过预期旧 HEAD 更新分支引用，作为提交边界。
-5. 按既有策略同步远端。
+1. 从远端固定快照校验 base_commit、记录旧哈希和现有目录。
+2. 在内存构造完整提案，检查格式、时间、来源、覆盖单元、ID 和关系。
+3. 确定性生成图，上传变更 blob 和 tree；正文与图属于同一个 commit。
+4. 再核对分支，使用 force=false 发布。并发变化时停止，不覆盖别人的提交。
+5. 读取远端 HEAD 确认后报告 remote_saved；响应丢失时报告 remote_outcome_unknown，再按原 operation_id 与原内容核查重试。
 
-普通失败回滚；进程中断留下恢复日志时读写均拒绝，运行 recover。不要手动删除日志。Git 提交后的中断会识别已提交状态；之前的中断恢复旧文件与索引。
+没有本地锁、日志、恢复目录或待推送记录。远端未被分支引用的 Git 对象可能保留，但不会作为成功版本交给查询。失败后不要使用新 operation_id 盲目重复写。
 
-锁是本机协作锁，外部编辑器不受它约束；勿在 apply/sync 运行期间手改文件。外部变更会在后续操作前检查，需 inspect + reindex，不允许假装当前图仍有效。
-
-输出本地与远端状态分别解释。after_write 推送失败不会删除已完成本地修改，会返回 pending_or_conflicted 和原始原因；再次 sync 即可核验/重试。
+远端人工编辑必须同样同步目录；reindex 仅重建图，不能补全人工删除的历史语义。普通增删改都使用 apply，不直接手改图。具体 API 行为与配置见 storage.md。

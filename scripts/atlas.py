@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
-"""Personal Atlas: Markdown records, a derived JSON graph, transactional Git storage.
-
-Python 3.9+, Git, standard library only. All public output is JSON.
-"""
+"""Personal Atlas: GitHub API storage only; no local personal-data files or cache."""
 import argparse
-import contextlib
+import base64
 import datetime as dt
-import fcntl
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
-import tarfile
-import tempfile
 import uuid
 from collections.abc import Mapping
 
-VERSION = 1
+sys.dont_write_bytecode = True
+from remote_store import AtlasError, APIError, UnknownOutcome, GitHub, RemoteFiles, require, validate_config
+
+VERSION = 1  # Record/graph schema; remote connection configuration is version 2.
 SKILL = Path(__file__).resolve().parents[1]
+SKILL_PREFIX = "skill/personal-atlas/"
 ID = re.compile(r"^[a-z][a-z0-9_-]{0,95}$")
 KINDS = {"person", "organization", "place", "profile", "topic", "preference",
          "routine", "state", "event", "decision", "goal", "project", "asset", "source"}
@@ -30,17 +25,9 @@ STATUSES = {"active", "historical", "disputed", "retracted"}
 RELATIONS = {"about", "part_of", "participated_in", "located_at", "works_at",
              "knows", "supports", "contradicts", "supersedes", "derived_from",
              "depends_on", "related_to"}
-CANONICAL = ("records/", "sources/", "operations/")
+CANONICAL = ("records/", "sources/", "operations/", SKILL_PREFIX)
 GENERATED = ("graph/", "manifests/")
-
-
-class AtlasError(Exception):
-    pass
-
-
-def require(condition, message):
-    if not condition:
-        raise AtlasError(message)
+MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 
 def now():
@@ -56,99 +43,24 @@ def encoded(value):
 
 
 def data_bytes(value):
-    return value.read_bytes() if isinstance(value, Path) else value
+    require(isinstance(value, bytes), "Personal data must remain in memory")
+    return value
 
 
 def digest(value):
-    h = hashlib.sha256()
-    if isinstance(value, Path):
-        with value.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                h.update(chunk)
-    else:
-        h.update(value)
-    return h.hexdigest()
-
-
-def git(root, *args, input=None, binary=False, check=True):
-    cmd = ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
-           "-c", "user.name=Personal Atlas", "-c", "user.email=atlas@localhost",
-           "-C", str(root), *args]
-    p = subprocess.run(cmd, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if check and p.returncode:
-        raise AtlasError("Git failed: " + p.stderr.decode(errors="replace").strip())
-    return p.stdout if binary else p.stdout.decode().strip()
+    return hashlib.sha256(data_bytes(value)).hexdigest()
 
 
 def head(root):
-    return git(root, "rev-parse", "--verify", "HEAD", check=False) or None
-
-
-def safe_relative(path):
-    p = Path(path)
-    require(not p.is_absolute() and ".." not in p.parts and str(p) == path,
-            "Unsafe relative path: " + path)
-    require(path and not path.startswith(".git/"), "Reserved path")
-    return p
+    return root.commit
 
 
 def owned(path):
     return path in {"vault.json", ".gitignore"} or path.startswith(CANONICAL + GENERATED)
 
 
-def atomic_file(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".atlas-" + uuid.uuid4().hex)
-    try:
-        with temporary.open("wb") as out:
-            if isinstance(value, Path):
-                with value.open("rb") as src:
-                    shutil.copyfileobj(src, out)
-            else:
-                out.write(value)
-            out.flush()
-            os.fsync(out.fileno())
-        os.replace(temporary, path)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-
-
-def inventory(root):
-    result = {}
-    for folder, directories, filenames in os.walk(root):
-        if Path(folder) == root:
-            directories[:] = [d for d in directories if d != ".git"]
-        for name in directories + filenames:
-            path = Path(folder) / name
-            rel = path.relative_to(root).as_posix()
-            require(not path.is_symlink(), "Symlink inside vault is not supported: " + rel)
-            if path.is_file():
-                require(owned(rel), "Unmanaged file in dedicated vault: " + rel)
-                result[rel] = path
-    return result
-
-
 def canonical(files):
-    return {p: v for p, v in files.items() if not p.startswith(GENERATED)}
-
-
-@contextlib.contextmanager
-def locked(root, recovery=False):
-    require((root / ".git").is_dir(), "Expected a dedicated Git checkout")
-    with (root / ".git/atlas.lock").open("a") as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise AtlasError("Vault is busy; retry after the current operation finishes")
-        require(recovery or not (root / ".git/atlas-transaction").exists(),
-                "Interrupted transaction detected; run recover before reading or writing")
-        yield
-
-
-def clean(root):
-    require(not git(root, "status", "--porcelain", "--untracked-files=all"),
-            "Uncommitted or external edits detected; inspect them and run reindex")
+    return {p: files[p] for p in files if not p.startswith(GENERATED)}
 
 
 def parse_markdown(value):
@@ -411,25 +323,127 @@ def derive(files):
     return generated, records
 
 
+
+def config_path(args):
+    return Path(args.config).expanduser().resolve() if args.config else SKILL / ".local/config.json"
+
+
+def load_config(args):
+    path = config_path(args)
+    require(path.is_file(), "Configure .local/config.json first; remote GitHub storage is required")
+    config = json.loads(path.read_text())
+    validate_config(config)
+    return config
+
+
+def configure(args):
+    config = json.load(sys.stdin)
+    validate_config(config)
+    path = config_path(args)
+    require(not path.exists(), "Configuration exists; edit its plaintext fields explicitly")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Configuration is the sole runtime file written locally. No data temp files.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(encoded(config))
+        stream.flush()
+        os.fsync(stream.fileno())
+    return {"status": "configured", "config": str(path), "credentials_storage": "plaintext",
+            "remote_initialized": False}
+
+
+def skill_bundle():
+    bundle = {}
+    candidates = []
+    for name in ("SKILL.md", ".gitignore", "agents", "references", "scripts", "assets"):
+        top = SKILL / name
+        require(not top.is_symlink(), "Skill bundle cannot contain symlinks")
+        if top.is_file():
+            candidates.append(top)
+        elif top.is_dir():
+            candidates.extend(top.rglob("*"))
+    for path in sorted(candidates):
+        relative = path.relative_to(SKILL)
+        if relative.parts[0] not in {"SKILL.md", ".gitignore", "agents", "references", "scripts", "assets"}:
+            continue
+        if any(p.startswith(".") or p == "__pycache__" for p in relative.parts) and relative.as_posix() != ".gitignore":
+            continue
+        if path.name == "config.json" or path.suffix in {".pyc", ".pyo"}:
+            continue
+        require(not path.is_symlink(), "Skill bundle cannot contain symlinks")
+        if path.is_file():
+            bundle[SKILL_PREFIX + relative.as_posix()] = path.read_bytes()
+    require(SKILL_PREFIX + "SKILL.md" in bundle and
+            SKILL_PREFIX + "scripts/atlas.py" in bundle and
+            SKILL_PREFIX + "scripts/remote_store.py" in bundle, "Skill bundle is incomplete")
+    return bundle
+
+
 def checked(root):
-    files = inventory(root)
-    require("vault.json" in files, "No Personal Atlas vault at this location")
-    generated, records = derive(canonical(files))
-    existing = {p: v for p, v in files.items() if p.startswith(GENERATED)}
-    require(existing.keys() == generated.keys() and
-            all(digest(existing[p]) == digest(v) for p, v in generated.items()),
-            "Graph/index is stale or corrupt; inspect external edits and run reindex")
-    return files, records
+    require(all(owned(p) for p in root), "Unmanaged files in dedicated Atlas repository")
+    require("vault.json" in root, "Remote is not a Personal Atlas vault")
+    generated, records = derive(canonical(root))
+    existing = {p for p in root if p.startswith(GENERATED)}
+    require(existing == set(generated) and all(root[p] == v for p, v in generated.items()),
+            "Remote graph/index is stale or corrupt; inspect and run reindex")
+    return root, records
+
+
+def publish(root, proposed, message):
+    require(all(owned(p) for p in proposed), "Unexpected file in operation")
+    return root.api.publish(root, proposed, message)
+
+
+def initialize(api):
+    current = api.head(allow_missing=True)
+    if current is None:
+        repository = api.request("GET", "")
+        branches = api.request("GET", "/branches?per_page=1")
+        require(not branches, "Configured branch missing in a nonempty repository; refusing initialization")
+        require(api.branch == repository["default_branch"],
+                "Empty repository initialization must use its default branch")
+        # Git database APIs cannot initialize an empty GitHub repository.
+        # One recoverable bootstrap commit precedes the complete Atlas commit.
+        vault = {"schema_version": VERSION, "id": uid("vault"), "created_at": now(),
+                 "phase": "initializing", "storage": "github_api"}
+        try:
+            api.request("PUT", "/contents/vault.json", {
+                "message": "Bootstrap Personal Atlas", "branch": api.branch,
+                "content": base64.b64encode(encoded(vault)).decode()})
+        except AtlasError as error:
+            raise AtlasError("Initialization not confirmed; rerun init to inspect/resume remote bootstrap. " + str(error)) from None
+    files = api.snapshot()
+    require("vault.json" in files, "Remote is not an empty or existing Atlas repository")
+    vault = json.loads(files["vault.json"])
+    require(vault.get("schema_version") == VERSION and isinstance(vault.get("id"), str),
+            "Unsupported remote vault")
+    if vault.get("phase") == "initializing":
+        require(set(files) == {"vault.json"} and vault.get("storage") == "github_api",
+                "Unexpected files in partial initialization; inspect remote state")
+        vault["phase"] = "ready"
+        proposed = {"vault.json": encoded(vault), ".gitignore": b".DS_Store\n.local/\n__pycache__/\n*.pyc\n",
+                    **skill_bundle()}
+    else:
+        checked(files)
+        proposed = canonical(files)
+        # Keep the initialized snapshot on repeat init; deliberate upgrades use archive-skill.
+        if SKILL_PREFIX + "SKILL.md" in files:
+            return {"status": "already_initialized", "commit": files.commit,
+                    "remote_confirmed": True, "skill_directory": SKILL_PREFIX, "vault_id": vault["id"]}
+        proposed.update(skill_bundle())
+    generated, _ = derive(proposed)
+    return {**publish(files, {**proposed, **generated}, "Initialize Atlas with complete skill snapshot"),
+            "vault_id": vault["id"], "skill_directory": SKILL_PREFIX}
 
 
 class LazyRecords(Mapping):
-    """Read only requested records; full-text search still deliberately scans records."""
-    def __init__(self, root):
-        self.root = root
-        graph = json.loads((root / "graph/root.json").read_text())
+    def __init__(self, root, metadata_only=False):
+        self.root, self.metadata_only = root, metadata_only
+        graph = json.loads(root["graph/root.json"])
         self.ids = []
         for path in graph["node_pages"]:
-            self.ids.extend(r for r in json.loads((root / path).read_text()) if ":" not in r)
+            self.ids.extend(r for r in json.loads(root[path]) if ":" not in r)
+        require(len(self.ids) == len(set(self.ids)), "Duplicate graph node IDs")
         self.id_set = set(self.ids)
 
     def __iter__(self):
@@ -444,176 +458,13 @@ class LazyRecords(Mapping):
     def __getitem__(self, key):
         if key not in self.id_set:
             raise KeyError(key)
-        node = json.loads((self.root / "graph/nodes" / (key + ".json")).read_text())
-        meta, body = parse_markdown(self.root / node["path"])
+        node = json.loads(self.root["graph/nodes/" + key + ".json"])
+        if self.metadata_only:
+            return {"meta": node, "body": "", "path": node["path"], "sha256": node["sha256"]}
+        value = self.root[node["path"]]
+        require(digest(value) == node["sha256"], "Record differs from graph; run verify")
+        meta, body = parse_markdown(value)
         return {"meta": meta, "body": body, "path": node["path"], "sha256": node["sha256"]}
-
-
-def read_snapshot(root, full=False):
-    clean(root)
-    stamp = root / ".git/atlas-verified.json"
-    current = head(root)
-    cached = json.loads(stamp.read_text()) if stamp.exists() else {}
-    if full or cached.get("commit") != current or cached.get("schema_version") != VERSION:
-        checked(root)
-        atomic_file(stamp, encoded({"commit": current, "schema_version": VERSION}))
-    return LazyRecords(root)
-
-
-def finish_write(root, config, result):
-    if config["sync"] == "after_write" and config.get("remote"):
-        try:
-            result["sync"] = synchronize(root, config)
-        except AtlasError as e:
-            result["sync"] = {"status": "pending_or_conflicted", "error": str(e),
-                              "remote_confirmed": False}
-    else:
-        result["sync"] = {"status": "not_requested", "remote_confirmed": False}
-    return result
-
-
-def recover(root):
-    folder = root / ".git/atlas-transaction"
-    if not folder.exists():
-        return {"status": "no_interrupted_transaction"}
-    journal = json.loads((folder / "journal.json").read_text())
-    if journal.get("target") and head(root) == journal["target"]:
-        shutil.rmtree(folder)
-        return {"status": "local_saved", "commit": head(root)}
-    require(head(root) == journal["base"], "HEAD changed independently; manual recovery required")
-    for path, existed in journal["before"].items():
-        destination = root / safe_relative(path)
-        if existed:
-            atomic_file(destination, folder / "before" / path)
-        elif destination.exists():
-            destination.unlink()
-    index = root / ".git/index"
-    if (folder / "index").exists():
-        atomic_file(index, folder / "index")
-    elif index.exists():
-        index.unlink()
-    shutil.rmtree(folder)
-    return {"status": "rolled_back", "commit": head(root)}
-
-
-def publish(root, proposed, message, parents=None, target=None):
-    """Caller holds lock. Journal precedes writes; Git ref is the commit boundary."""
-    existing = inventory(root)
-    changed = sorted(p for p in existing.keys() | proposed.keys()
-                     if p not in existing or p not in proposed or digest(existing[p]) != digest(proposed[p]))
-    if not changed and target is None:
-        return {"status": "unchanged", "commit": head(root)}
-    base = head(root)
-    branch = git(root, "symbolic-ref", "HEAD")
-    journal = {"base": base, "target": None, "before": {p: p in existing for p in changed}}
-    folder = root / ".git/atlas-transaction"
-    prepare = root / (".git/atlas-preparing-" + uuid.uuid4().hex)
-    prepare.mkdir()
-    try:
-        for path in changed:
-            if path in existing:
-                atomic_file(prepare / "before" / path, existing[path])
-        if (root / ".git/index").exists():
-            shutil.copyfile(root / ".git/index", prepare / "index")
-        atomic_file(prepare / "journal.json", encoded(journal))
-        os.replace(prepare, folder)
-        # Resolve references to files that will be replaced/deleted before writing them.
-        for path in changed:
-            if path in proposed:
-                value = proposed[path]
-                if isinstance(value, Path) and value.is_relative_to(root):
-                    rel = value.relative_to(root).as_posix()
-                    if rel in journal["before"] and journal["before"][rel]:
-                        value = folder / "before" / rel
-                atomic_file(root / path, value)
-            else:
-                (root / path).unlink()
-        if os.environ.get("ATLAS_TEST_INTERRUPT") == "after_files":
-            os._exit(86)
-        git(root, "add", "--all", "--", ".")
-        if target is None:
-            tree = git(root, "write-tree")
-            parent_args = []
-            for parent in (parents if parents is not None else ([base] if base else [])):
-                parent_args += ["-p", parent]
-            target = git(root, "commit-tree", tree, *parent_args, input=(message + "\n").encode())
-        else:
-            require(git(root, "write-tree") == git(root, "rev-parse", target + "^{tree}"),
-                    "Fast-forward tree does not match validated remote tree")
-        journal["target"] = target
-        atomic_file(folder / "journal.json", encoded(journal))
-        git(root, "update-ref", branch, target, base or "0" * 40)
-        if os.environ.get("ATLAS_TEST_INTERRUPT") == "after_commit":
-            os._exit(87)
-        shutil.rmtree(folder)
-        atomic_file(root / ".git/atlas-verified.json", encoded({"commit": target, "schema_version": VERSION}))
-        return {"status": "local_saved", "commit": target, "changed_files": len(changed)}
-    except Exception:
-        if folder.exists():
-            recover(root)
-        if prepare.exists():
-            shutil.rmtree(prepare)
-        raise
-
-
-def config_path(args):
-    return Path(args.config).expanduser().resolve() if args.config else SKILL / ".local/config.json"
-
-
-def load_config(args):
-    path = config_path(args)
-    require(path.is_file(), "Not configured; run init with a local directory or Git remote")
-    config = json.loads(path.read_text())
-    root = Path(config["checkout"]).expanduser()
-    if not root.is_absolute():
-        root = (path.parent / root).resolve()
-    require(config.get("schema_version") == VERSION, "Unsupported configuration version")
-    require((root / "vault.json").is_file(), "Configured checkout is unavailable")
-    vault = json.loads((root / "vault.json").read_text())
-    require(vault["id"] == config["vault_id"], "Configured vault identity does not match checkout")
-    return config, root
-
-
-def initialize(args):
-    config_file = config_path(args)
-    require(not args.branch.startswith("-") and
-            git(SKILL, "check-ref-format", "--branch", args.branch, check=False) == args.branch,
-            "Invalid branch name")
-    require(not config_file.exists(), "Configuration already exists; it will not be overwritten")
-    root = Path(args.path).expanduser().resolve() if args.path else config_file.parent / "store"
-    require(not root.exists() or not any(root.iterdir()), "Initialization needs a new empty directory")
-    if args.remote:
-        require(not args.remote.startswith("-"), "Invalid remote")
-        root.parent.mkdir(parents=True, exist_ok=True)
-        p = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "clone", "--no-checkout",
-                            "--", args.remote, str(root)], capture_output=True)
-        require(p.returncode == 0, "Clone failed: " + p.stderr.decode(errors="replace"))
-        remote_ref = "refs/remotes/origin/" + args.branch
-        remote_head = git(root, "rev-parse", "--verify", remote_ref, check=False)
-        if remote_head:
-            git(root, "checkout", "-B", args.branch, remote_ref)
-        else:
-            require(not git(root, "for-each-ref", "--format=%(refname)", "refs/remotes"),
-                    "Remote is not empty and requested branch does not exist")
-            git(root, "symbolic-ref", "HEAD", "refs/heads/" + args.branch)
-    else:
-        root.mkdir(parents=True, exist_ok=True)
-        git(root, "init", "-b", args.branch)
-    with locked(root):
-        if (root / "vault.json").exists():
-            checked(root)
-        else:
-            require(not inventory(root), "Remote is not an empty Atlas vault; refusing initialization")
-            vault = {"schema_version": VERSION, "id": uid("vault"), "created_at": now()}
-            files = {"vault.json": encoded(vault), ".gitignore": b".DS_Store\n"}
-            derived, _ = derive(files)
-            publish(root, {**files, **derived}, "Initialize Personal Atlas")
-        vault = json.loads((root / "vault.json").read_text())
-        config = {"schema_version": VERSION, "vault_id": vault["id"], "checkout": str(root),
-                  "remote": args.remote, "branch": args.branch, "sync": args.sync}
-        atomic_file(config_file, encoded(config))
-    return {"status": "configured", "config": str(config_file), "checkout": str(root),
-            "vault_id": vault["id"], "remote_confirmed": False}
 
 
 def new_meta(meta, old=None):
@@ -629,7 +480,6 @@ def new_meta(meta, old=None):
 
 def apply_plan(root, plan):
     files, records = checked(root)
-    clean(root)
     require(isinstance(plan.get("operation_id"), str) and ID.fullmatch(plan["operation_id"]),
             "Plan needs a stable operation_id")
     op_path = "operations/" + plan["operation_id"] + ".json"
@@ -637,7 +487,7 @@ def apply_plan(root, plan):
     if op_path in files:
         prior = json.loads(data_bytes(files[op_path]))
         require(prior.get("plan_sha256") == plan_hash, "Operation ID reused with different content")
-        return {"status": "already_applied", "commit": head(root)}
+        return {"status": "already_applied", "commit": head(root), "remote_confirmed": True}
     require(plan.get("base_commit") == head(root), "Stale base_commit; inspect changes and rebuild plan")
     require(isinstance(plan.get("changes"), list) and plan["changes"], "Empty change plan")
     proposed = canonical(files)
@@ -680,41 +530,6 @@ def apply_plan(root, plan):
     return {**result, "operation_id": plan["operation_id"], "changed_ids": sorted(touched),
             "deleted_ids": deleted, "history_purged": False}
 
-
-def ingest(root, args):
-    files, records = checked(root)
-    clean(root)
-    original = Path(args.file).expanduser().resolve()
-    require(original.is_file(), "Source file not found")
-    content_hash = digest(original)
-    for record in records.values():
-        if record["meta"].get("source", {}).get("sha256") == content_hash:
-            return {"status": "already_imported", "source_id": record["meta"]["id"],
-                    "commit": head(root)}
-    # Prevent forgotten originals from silently coming back through a later import.
-    for path, value in files.items():
-        if path.startswith("operations/"):
-            operation = json.loads(data_bytes(value))
-            require(content_hash not in operation.get("deleted_source_hashes", []),
-                    "This source was deleted; explicit restoration under a new policy is required")
-    rid = uid("src")
-    raw_path = "sources/" + rid + "/original" + original.suffix.lower()
-    meta = new_meta({"id": rid, "type": "source", "title": args.title or original.name,
-                     "summary": args.summary or "原始来源；尚未完成信息提取。",
-                     "domains": args.domain or ["inbox"], "temporal": {"mode": "none"},
-                     "basis": "document", "source": {"raw_path": raw_path,
-                         "sha256": content_hash, "original_name": original.name,
-                         "coverage": "unprocessed", "coverage_note": "尚未提取；原文件完整保留。"}})
-    proposed = canonical(files)
-    proposed[raw_path] = original
-    proposed[record_path(meta)] = markdown(meta, "# " + meta["title"] +
-        "\n\n原文作为数据保存。使用行号、消息 ID、页码或时间码定位提取依据。\n")
-    op = uid("op")
-    proposed["operations/" + op + ".json"] = encoded({"id": op, "recorded_at": now(),
-        "changed_ids": [rid], "deleted_ids": [], "source_sha256": content_hash})
-    derived, _ = derive(proposed)
-    result = publish(root, {**proposed, **derived}, "Import source " + rid)
-    return {**result, "source_id": rid, "sha256": content_hash, "extraction": "unprocessed"}
 
 
 def page_result(items, args):
@@ -790,14 +605,14 @@ def neighbors(root, records, args):
     name = args.id.replace(":", "--")
     require(ID.fullmatch(args.id) or re.fullmatch(r"domain:[a-z][a-z0-9_-]{0,95}", args.id),
             "Invalid graph node ID")
-    node_path = root / "graph/nodes" / (name + ".json")
-    require(node_path.is_file(), "Graph node does not exist")
-    node = json.loads(node_path.read_text())
+    node_path = "graph/nodes/" + name + ".json"
+    require(node_path in root, "Graph node does not exist")
+    node = json.loads(root[node_path])
     edges = []
     directions = ["incoming", "outgoing"] if args.direction == "both" else [args.direction]
     for direction in directions:
         for ref in node["adjacency"][direction]:
-            for edge in json.loads((root / ref["path"]).read_text())["edges"]:
+            for edge in json.loads(root[ref["path"]])["edges"]:
                 if args.relation and edge["type"] != args.relation:
                     continue
                 other = edge["to"] if direction == "outgoing" else edge["from"]
@@ -810,110 +625,66 @@ def neighbors(root, records, args):
             **page_result(edges, args)}
 
 
-@contextlib.contextmanager
-def revision_files(root, revision):
-    with tempfile.TemporaryDirectory(prefix="atlas-revision-") as directory:
-        destination = Path(directory)
-        # Stream archives, including large original files, without buffering the corpus.
-        process = subprocess.Popen(["git", "-C", str(root), "archive", revision], stdout=subprocess.PIPE)
-        try:
-            with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
-                for item in archive:
-                    relative = item.name.rstrip("/")
-                    safe_relative(relative)
-                    require(item.isdir() or item.isfile(), "Unsupported remote archive entry")
-                    if item.isfile():
-                        require(owned(relative), "Unmanaged remote file: " + relative)
-                        path = destination / relative
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        with archive.extractfile(item) as source, path.open("wb") as out:
-                            shutil.copyfileobj(source, out)
-            require(process.wait() == 0, "Could not read remote revision")
-            yield inventory(destination)
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait()
 
-
-def synchronize(root, config):
-    require(config.get("remote"), "No remote configured")
-    require(git(root, "remote", "get-url", "origin") == config["remote"], "Remote URL changed")
-    require(git(root, "symbolic-ref", "--short", "HEAD") == config["branch"], "Branch changed")
-    checked(root)
-    clean(root)
-    git(root, "fetch", "origin")
-    remote_ref = "refs/remotes/origin/" + config["branch"]
-    remote_head = git(root, "rev-parse", "--verify", remote_ref, check=False) or None
-    local_head = head(root)
-    if remote_head and remote_head != local_head:
-        base = git(root, "merge-base", local_head, remote_head, check=False)
-        require(base, "Unrelated repository histories; refusing synchronization")
-        if base != remote_head:
-            with revision_files(root, remote_head) as remote:
-                require(json.loads(data_bytes(remote["vault.json"]))["id"] == config["vault_id"],
-                        "Remote vault identity mismatch")
-                remote_derived, _ = derive(canonical(remote))
-                require({p: digest(v) for p, v in remote.items() if p.startswith(GENERATED)} ==
-                        {p: digest(v) for p, v in remote_derived.items()}, "Remote graph is inconsistent")
-                if base == local_head:
-                    publish(root, remote, "Fast-forward Atlas", target=remote_head)
-                else:
-                    with revision_files(root, base) as ancestor:
-                        local = canonical(inventory(root))
-                        theirs, before = canonical(remote), canonical(ancestor)
-                        merged, conflicts = {}, []
-                        for path in sorted(local.keys() | theirs.keys() | before.keys()):
-                            a, b, c = (digest(m[path]) if path in m else None for m in (before, local, theirs))
-                            if b == c or c == a:
-                                value = local.get(path)
-                            elif b == a:
-                                value = theirs.get(path)
-                            else:
-                                conflicts.append(path)
-                                continue
-                            if value is not None:
-                                merged[path] = value
-                        require(not conflicts, "Concurrent edits require reconciliation: " + ", ".join(conflicts))
-                        generated, _ = derive(merged)  # Includes deletion versus reference checks.
-                        publish(root, {**merged, **generated}, "Merge independent Atlas changes",
-                                parents=[local_head, remote_head])
-    # No force push; a racing writer results in a rejected push and explicit retry.
-    git(root, "push", "origin", "HEAD:refs/heads/" + config["branch"])
-    current = head(root)
-    observed = git(root, "ls-remote", "origin", "refs/heads/" + config["branch"]).split()
-    require(observed and observed[0] == current,
-            "Push was issued but exact remote HEAD confirmation is unavailable; rerun sync")
-    return {"status": "remote_confirmed", "commit": current, "remote_confirmed": True}
+def ingest(root, args, content):
+    files, records = checked(root)
+    require(content and len(content) <= MAX_SOURCE_BYTES, "Source must be 1 byte to 20 MiB; split larger input in memory")
+    require(args.name and Path(args.name).name == args.name and args.name not in {'.', '..'},
+            "Source name must be a filename, not a path")
+    content_hash = digest(content)
+    for record in records.values():
+        if record["meta"].get("source", {}).get("sha256") == content_hash:
+            return {"status": "already_imported", "source_id": record["meta"]["id"],
+                    "commit": head(root), "remote_confirmed": True}
+    for path in files:
+        if path.startswith("operations/"):
+            operation = json.loads(files[path])
+            require(content_hash not in operation.get("deleted_source_hashes", []),
+                    "This source was deleted; explicit restoration under a new policy is required")
+    rid = uid("src")
+    suffix = Path(args.name).suffix.lower()
+    require(not suffix or re.fullmatch(r"\.[a-z0-9_-]{1,20}", suffix), "Unsupported filename suffix")
+    raw_path = "sources/" + rid + "/original" + suffix
+    meta = new_meta({"id": rid, "type": "source", "title": args.title or args.name,
+                     "summary": args.summary or "原始来源；尚未完成信息提取。",
+                     "domains": args.domain or ["inbox"], "temporal": {"mode": "none"},
+                     "basis": "document", "source": {"raw_path": raw_path,
+                         "sha256": content_hash, "original_name": args.name,
+                         "coverage": "unprocessed", "coverage_note": "尚未提取；原文件完整保留。"}})
+    proposed = canonical(files)
+    proposed[raw_path] = content
+    proposed[record_path(meta)] = markdown(meta, "# " + meta["title"] +
+        "\n\n原文作为数据保存。使用行号、消息 ID、页码或时间码定位提取依据。\n")
+    op = uid("op")
+    proposed["operations/" + op + ".json"] = encoded({"id": op, "recorded_at": now(),
+        "changed_ids": [rid], "deleted_ids": [], "source_sha256": content_hash})
+    derived, _ = derive(proposed)
+    result = publish(root, {**proposed, **derived}, "Import source " + rid)
+    return {**result, "source_id": rid, "sha256": content_hash, "extraction": "unprocessed"}
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--config", help="Defaults to the skill's .local/config.json")
-    p.add_argument("--snapshot", help="For paginated reads: reject a changed commit")
+    p.add_argument("--config", help="Defaults to <skill>/.local/config.json (plaintext credentials)")
+    p.add_argument("--snapshot", help="Reject if the current remote branch no longer matches")
     sub = p.add_subparsers(dest="command", required=True)
-    init = sub.add_parser("init")
-    init.add_argument("--path")
-    init.add_argument("--remote")
-    init.add_argument("--branch", default="main")
-    init.add_argument("--sync", choices=["manual", "after_write"], default="manual")
-    for command in ("status", "verify", "recover", "reindex", "sync", "graph"):
+    configure_parser = sub.add_parser("configure")
+    configure_parser.add_argument("--stdin", action="store_true", required=True)
+    for command in ("init", "status", "verify", "reindex", "graph", "archive-skill"):
         sub.add_parser(command)
     apply = sub.add_parser("apply")
-    apply.add_argument("--plan", required=True)
+    apply.add_argument("--stdin", action="store_true", required=True, help="JSON operation from stdin; no plan file")
     ing = sub.add_parser("ingest")
-    ing.add_argument("--file", required=True)
+    ing.add_argument("--stdin", action="store_true", required=True, help="Raw bytes from stdin; never spooled to disk")
+    ing.add_argument("--name", required=True)
     ing.add_argument("--title")
     ing.add_argument("--summary")
     ing.add_argument("--domain", action="append")
-    read = sub.add_parser("read")
-    read.add_argument("id")
-    read.add_argument("--offset", type=int, default=0, help="Zero-based body line offset")
-    read.add_argument("--limit", type=int, default=80)
-    source = sub.add_parser("source")
-    source.add_argument("id")
-    source.add_argument("--offset", type=int, default=0)
-    source.add_argument("--limit", type=int, default=80)
+    for command in ("read", "source"):
+        q = sub.add_parser(command)
+        q.add_argument("id")
+        q.add_argument("--offset", type=int, default=0)
+        q.add_argument("--limit", type=int, default=80)
     for command in ("search", "list", "timeline", "neighbors"):
         q = sub.add_parser(command)
         q.add_argument("--offset", type=int, default=0)
@@ -936,87 +707,69 @@ def parser():
     return p
 
 
-def run(args):
+def run(args, api=None):
+    if args.command == "configure":
+        return configure(args)
+    api = api or GitHub(load_config(args))
     if args.command == "init":
-        return initialize(args)
-    config, root = load_config(args)
-    with locked(root, recovery=args.command == "recover"):
-        if args.command == "recover":
-            return recover(root)
-        if args.command == "reindex":
-            require(not git(root, "diff", "--cached", "--name-only"),
-                    "Staged user changes detected; inspect and unstage before reindex")
-            files = canonical(inventory(root))
-            with revision_files(root, head(root)) as previous:
-                old_records = records_from(previous)
-            current_records = records_from(files)
-            removed = sorted(set(old_records) - set(current_records))
-            edited = sorted(rid for rid, r in current_records.items()
-                            if rid not in old_records or r["sha256"] != old_records[rid]["sha256"])
-            if removed or edited:
-                op = uid("op")
-                files["operations/" + op + ".json"] = encoded({"id": op, "recorded_at": now(),
-                    "changed_ids": edited, "deleted_ids": removed,
-                    "deleted_source_hashes": [old_records[r]["meta"]["source"]["sha256"]
-                        for r in removed if old_records[r]["meta"]["type"] == "source"]})
-                for rid in removed:
-                    if old_records[rid]["meta"]["type"] == "source":
-                        files.pop(old_records[rid]["meta"]["source"]["raw_path"], None)
-            derived, _ = derive(files)
-            return finish_write(root, config, publish(root, {**files, **derived}, "Reconcile external Atlas edits"))
-        if args.command == "sync":
-            return synchronize(root, config)
-        if args.command == "apply":
-            result = apply_plan(root, json.loads(Path(args.plan).read_text()))
-            return finish_write(root, config, result)
-        if args.command == "ingest":
-            # Freeze the supplied bytes before hashing/validating; an external editor cannot
-            # change the archived original halfway through an Atlas transaction.
-            source_file = Path(args.file).expanduser().resolve()
-            require(source_file.is_file(), "Source file not found")
-            with tempfile.TemporaryDirectory(prefix="atlas-import-") as temporary:
-                frozen = Path(temporary) / source_file.name
-                shutil.copyfile(source_file, frozen)
-                args.file = str(frozen)
-                return finish_write(root, config, ingest(root, args))
-        records = read_snapshot(root, full=args.command == "verify")
-        require(not args.snapshot or args.snapshot == head(root),
-                "Snapshot changed between reads; restart the affected query")
-        if args.command in {"status", "verify", "graph"}:
-            graph = json.loads((root / "graph/root.json").read_text())
-            return {"status": "valid", "snapshot": head(root), "graph": graph,
-                    "remote_configured": bool(config.get("remote")), "remote_checked": False,
-                    "sync_mode": config["sync"]}
-        if args.command in {"search", "list", "timeline"}:
-            return query(root, records, args)
-        if args.command == "neighbors":
-            return neighbors(root, records, args)
-        if args.command in {"read", "source"}:
-            require(args.id in records, "Record not found")
-            record = records[args.id]
-            if args.command == "source":
-                require(record["meta"]["type"] == "source", "Not a source record")
-                raw = record["meta"]["source"]["raw_path"]
-                require(0 < args.limit <= 200 and args.offset >= 0, "Invalid pagination")
-                selected_lines, total = [], 0
-                try:
-                    with (root / raw).open(encoding="utf-8") as stream:
-                        for i, line in enumerate(stream):
-                            total = i + 1
-                            if args.offset <= i < args.offset + args.limit:
-                                require(len(line) <= 16000,
-                                        "Long source line; use a format-aware parser with stable locators")
-                                selected_lines.append({"line": i + 1, "text": line.rstrip("\n")})
-                except UnicodeDecodeError:
-                    return {"snapshot": head(root), "source_id": args.id, "binary": True,
-                            "path": str(root / raw), "sha256": record["meta"]["source"]["sha256"]}
-                end = args.offset + args.limit
-                return {"snapshot": head(root), "source_id": args.id, "total_lines": total,
-                        "lines": selected_lines, "next_offset": end if end < total else None,
-                        "truncated": end < total}
-            return {"snapshot": head(root), "meta": record["meta"], "sha256": record["sha256"],
-                    "body": page_result(record["body"].splitlines(), args)}
-        raise AtlasError("Unknown command")
+        return initialize(api)
+    root = api.snapshot(args.snapshot)
+    require("vault.json" in root, "Remote is not an Atlas repository; run init")
+    vault = json.loads(root["vault.json"])
+    require(vault.get("schema_version") == VERSION and vault.get("phase") != "initializing",
+            "Remote initialization incomplete or incompatible; run init")
+    if args.command == "reindex":
+        require(all(owned(p) for p in root), "Unmanaged remote files; inspect before reindex")
+        files = canonical(root)
+        derived, _ = derive(files)
+        return publish(root, {**files, **derived}, "Rebuild remote Atlas graph")
+    if args.command == "archive-skill":
+        checked(root)
+        files = {p: v for p, v in canonical(root).items() if not p.startswith(SKILL_PREFIX)}
+        files.update(skill_bundle())
+        derived, _ = derive(files)
+        return publish(root, {**files, **derived}, "Update complete Atlas skill snapshot")
+    if args.command == "apply":
+        return apply_plan(root, json.load(sys.stdin))
+    if args.command == "ingest":
+        return ingest(root, args, sys.stdin.buffer.read(MAX_SOURCE_BYTES + 1))
+    require("graph/root.json" in root, "Remote graph missing; inspect and run reindex")
+    graph = json.loads(root["graph/root.json"])
+    require(graph["vault_id"] == vault["id"], "Remote graph/vault identity mismatch")
+    if args.command in {"status", "verify", "graph"}:
+        if args.command == "verify":
+            checked(root)
+        return {"status": "valid" if args.command == "verify" else "remote_available",
+                "snapshot": root.commit, "graph": graph, "remote_checked": True,
+                "verification": "full" if args.command == "verify" else "entrypoint_only",
+                "storage": "github_api", "local_data_storage": False}
+    records = LazyRecords(root, metadata_only=args.command in {"list", "timeline", "neighbors"})
+    if args.command in {"search", "list", "timeline"}:
+        return query(root, records, args)
+    if args.command == "neighbors":
+        return neighbors(root, records, args)
+    require(args.id in records, "Record not found")
+    record = records[args.id]
+    if args.command == "read":
+        return {"snapshot": root.commit, "meta": record["meta"], "sha256": record["sha256"],
+                "url": root.url(record["path"]), "body": page_result(record["body"].splitlines(), args)}
+    require(record["meta"]["type"] == "source", "Not a source record")
+    raw = record["meta"]["source"]["raw_path"]
+    content = root[raw]
+    require(digest(content) == record["meta"]["source"]["sha256"], "Source hash mismatch")
+    try:
+        lines = content.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return {"snapshot": root.commit, "source_id": args.id, "binary": True,
+                "path": raw, "url": root.url(raw), "sha256": digest(content),
+                "local_file": None, "bytes": len(content)}
+    result = page_result(lines, args)
+    require(all(len(line) <= 16000 for line in result["items"]),
+            "Long source line; use an in-memory format parser with stable locators")
+    return {"snapshot": root.commit, "source_id": args.id, "total_lines": result["total"],
+            "url": root.url(raw),
+            "lines": [{"line": args.offset + i + 1, "text": line} for i, line in enumerate(result["items"])],
+            "next_offset": result["next_offset"], "truncated": result["truncated"]}
 
 
 def main():
@@ -1025,8 +778,18 @@ def main():
         result = run(args)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except (AtlasError, ValueError, KeyError, TypeError, OSError) as e:
-        print(json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False), file=sys.stderr)
+    except (AtlasError, ValueError, KeyError, TypeError, OSError) as error:
+        message = str(error)
+        try:
+            token = load_config(args)["credentials"]["token"]
+            message = message.replace(token, "[REDACTED]")
+        except (AtlasError, ValueError, KeyError, TypeError, OSError):
+            pass
+        result = {"status": "remote_outcome_unknown" if isinstance(error, UnknownOutcome) else "error",
+                  "error": message, "local_data_saved": False}
+        if isinstance(error, UnknownOutcome):
+            result.update(candidate_commit=error.commit, remote_confirmed=False)
+        print(json.dumps(result, ensure_ascii=False), file=sys.stderr)
         return 2
 
 

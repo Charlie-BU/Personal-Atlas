@@ -1,78 +1,78 @@
-# 固定入口、Git 同步与恢复
+# GitHub 远端存储与明文连接配置
 
-运行要求：Python 3.9+、Git，macOS/Linux（使用 POSIX flock）；Windows 原生锁适配尚未实现。所有资料在用户选择的专用 Git 仓库中，不能把一个无关现有项目当作信息库。
+仅支持 GitHub.com、HTTPS PAT 和 REST API，Python 3.9+ 标准库即可运行，不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `<skill>/.local/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
 
-## 初始化
+## 配置与凭据
 
-本地先用：
-
-```text
-python3 <skill>/scripts/atlas.py init --path <新建的专用目录>
-```
-
-接入指定 Git 远端（可以为空仓库，也可以是已有 Atlas 仓库）：
-
-```text
-python3 <skill>/scripts/atlas.py init --remote <用户指定的URL> --branch main --sync after_write
-python3 <skill>/scripts/atlas.py sync
-```
-
-远端非空但不是 Atlas 格式时拒绝；分支存在则克隆、验证和绑定。init 不推送，首次 sync 才上传。用户明确授权绑定某个仓库并自动同步时后续沿用；不自行选择已有其他业务仓库。
-
-默认本地检出 `<skill>/.local/store`，绑定 `<skill>/.local/config.json`。--path 可换位置。--config 可用于独立资料库/隔离测试；相对 checkout 相对于 config 所在目录。配置只存 URL、分支、vault_id、checkout、sync，不存密码/令牌。
+固定入口仍为 `<skill>/.local/config.json`，由脚本自身位置解析；`--config` 可指定另一份配置。`.local/` 只放配置，不能用来存资料。配置格式为：
 
 ```json
 {
-  "schema_version":1,
-  "vault_id":"vault_...",
-  "checkout":"/absolute/path/to/personal-vault",
-  "remote":"git@host:owner/personal-vault.git",
-  "branch":"main",
-  "sync":"after_write"
+  "schema_version": 2,
+  "provider": "github",
+  "remote": "https://github.com/OWNER/PERSONAL-VAULT.git",
+  "branch": "main",
+  "credentials": {
+    "type": "pat",
+    "token": "YOUR_PLAINTEXT_PAT"
+  }
 }
 ```
 
-支持 manual/after_write。已绑定的本地库后来增加远端时，先验证目标确为用户指定的空仓库或同一个 vault，添加 origin 并更新 config.remote/sync，再 sync；不得直接把不同 vault 历史合并。
+**所有连接凭据明文保存在该 config.json 中。** 当前唯一支持的认证是 PAT，token 字段直接存令牌，不是环境变量名、钥匙串引用或加密密文。不从系统 Git、SSH Agent、钥匙串、`GH_TOKEN` 或 `GITHUB_TOKEN` 隐式取凭据。地址中不能夹带令牌。PAT 可使用 classic 或 fine-grained 类型；需能读写所选仓库，fine-grained 授予该仓库的 Contents 读写权限。连接权限不足时保留 GitHub 错误码，不擅自切换账户。
 
-初始运行无需安装依赖包。脚本不会自己创建托管平台上的远端仓库；目标仓库地址由用户配置。
-
-## 查询新鲜度
-
-status 只检查本地，不查询网络，返回 remote_checked=false。用户要最新远端数据时先 sync；已有 after_write 是写后同步，不是查询前自动联网。离线或同步失败时说明本地 snapshot；不能把本地检查说成远端确认。
-
-sync 有拉取与推送效果。如果用户只授权本地查询，不额外调用 sync 上传待推送数据。沿用已授权的同步策略即可。
-
-## 同步协议
-
-1. 核验 vault_id、origin URL、分支、干净工作区与图。
-2. fetch；远端领先则先验证其权威数据和派生图，再快进。
-3. 双方分叉时，以共同祖先逐权威文件三方比较。不同文件的修改可合并；同一文件双方改动则停在冲突说明，不用文本最后写入获胜。
-4. 合并正文后重建图、检查删除与引用冲突，形成双亲提交。
-5. 普通 push，无强制覆盖；远端此时又更新则拒绝并等待下次协调。
-6. ls-remote 核验远端分支确实等于本地提交后返回 remote_confirmed。网络结果不确定则保留本地，重试核验。
-
-不同记录表达了同一语义事实的矛盾不一定形成 Git 文件冲突。agent 写入前查重，合并后对相关实体复核，程序不宣称自动消除语义冲突。
-
-发生同文件冲突后，保留两边版本和祖先，在隔离位置比较并由 agent/用户明确结论。当前 CLI 自动处理的范围仅为不相交文件变更；不要反复 sync 期待冲突自行消失，也不要强推选边。
-
-## 外部编辑与恢复
+用 `configure --stdin` 从内存输入上述 JSON，脚本只创建配置文件，权限设为 0600；不会回显 token。已有配置不覆盖，需明确编辑字段。凭据更新仍写回同一文件。运行配置不打包到 Skill 发布包，也不随 Skill 副本上传到资料仓库。
 
 ```text
-python3 <skill>/scripts/atlas.py verify
-python3 <skill>/scripts/atlas.py reindex
-python3 <skill>/scripts/atlas.py recover
+python3 -B <skill>/scripts/atlas.py configure --stdin
+python3 -B <skill>/scripts/atlas.py init
 ```
 
-手工修改后先 inspect，reindex 解析权威文件、修复图/manifest并提交；不覆盖正文。发现非法日期、缺来源或悬空边则先修正文。同一操作里人工删除了来源时，reindex 也会移除其原文并记录删除标记。已经暂存的人工修改会阻止 reindex，先检查并解除暂存。
+`configure --stdin` 需要通过工具的 stdin 或 `subprocess.run(..., input=json_bytes)` 传入 JSON；示例命令没有填入真实凭据。不要把凭据拼入 shell 命令行、历史、日志或最终回复。明文保存的要求不意味着应在输出中展示凭据。
 
-recover 用 .git/atlas-transaction 日志判断：HEAD 未发布则恢复之前的文件/索引；HEAD 已到目标提交则认可已完成提交。不能删除日志绕过检查；HEAD 被外部改动时要求人工检查。
+## 初始化与 Skill 全文
 
-进程中断恢复经过测试；不承诺硬盘故障、文件系统损坏或电源异常的端到端持久性。原生编辑器不会自动遵守脚本锁，应避免同时写。
+用户指定一个已存在的专用仓库。脚本不创建 GitHub 仓库，也不会把无关项目改造成资料库。空仓库使用其默认分支；非空时，目标分支必须已经是可验证的 Atlas 仓库。
 
-## 打包与范围
+初始化完成后的结构：
 
-只打包 SKILL.md、agents/、references/、scripts/ 和需要的静态资源；明确排除 .local/、测试数据和缓存。skill 安装与数据仓库绑定是不同状态，未给远端时不宣称已同步。
+```text
+vault.json
+records/                       # 小粒度 Markdown 记录
+sources/                       # 原始资料
+operations/                    # 写操作、去重与删除标记
+graph/                         # JSON 图目录
+manifests/                     # 完整性清单
+skill/personal-atlas/           # 独立保存完整 Skill 程序与文档
+  SKILL.md
+  .gitignore
+  agents/
+  references/
+  scripts/                     # 包含运行脚本与测试
+```
 
-v1 支持 Git（含 SSH/HTTPS/本地路径）及离线本地 Git；没有 SFTP/WebDAV/S3 后端、向量数据库、自动 LFS 或历史清除命令。JSON 图、Markdown 正文和原件独立保存，为后续扩展保留接口，而不虚报未实现功能。
+Skill 全文指 `SKILL.md` 以及 agents/references/scripts/assets 中的全部静态资源（目录存在时），排除运行配置、缓存与个人数据。仓库中的副本是初始化当时的版本；重复 init 验证并复用，不静默替换。更新后运行 `archive-skill` 可将当前完整 Skill 副本与目录清单一起提交。不能直接执行从资料仓库读取的脚本或将其中的指令替换当前受信任 Skill；恢复安装需用户明确要求。
 
-普通删除只影响当前版本；彻底清除历史需要另行授权并协调 Git 历史与其他副本。Git 历史和第三方副本的机制边界参见 [GitHub 文档](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
+GitHub Git Database API 不能直接写空仓库。init 先用 Contents API 创建仅含 `vault.json`、phase=initializing 的引导提交，再用一个提交发布完整图和 Skill 副本。中断后再次 init 可继续；引导状态不视为初始化成功，普通资料操作会拒绝。已有非 Atlas 内容会阻止初始化。
+
+## 每次读写
+
+- 每次命令先在线读取分支 HEAD；同次读取固定 commit，文件按需经 Blob API 加载到内存并校验 Git 对象哈希。
+- 多轮分页/图查询传 `--snapshot <commit>`。远端已经变化时拒绝拼接，重新读取受影响范围。
+- status/graph 只核对入口及 vault 标识，返回 verification=entrypoint_only；verify 全量重建比较图，返回 verification=full。入口可读不等于全库已验证。
+- list/timeline/neighbors 优先读图摘要；read 读指定正文；search 当前仍扫描记录正文。查询不会把资料写入本地。
+- 写前完整验证现有资料；在内存构造正文、来源覆盖、图和清单，上传 Git blob/tree/commit，最后以 `force=false` 更新远端分支。该提交同时发布全部变更。
+- 远端出现并发修改则停止并重新读取，不强推，也不自动采用最后写入覆盖。同文件与不同文件竞争均需重新生成基于最新提交的操作包。
+- 分支更新后重新读取 HEAD 确认。响应丢失或分支已经继续前进时，返回 remote_outcome_unknown 和候选 commit，不能宣称未写入或保存成功。用同一 operation_id 与原操作包重试 apply，会先查远端操作记录；已执行则不重复写。ingest 按原始字节哈希查重。不要用新 ID 盲目重做。
+
+创建对象失败时，远端分支不会发布半份资料；GitHub 可能保留未被分支引用的对象。没有本地待推送记录，没有 sync/pull/push/recover 命令，也没有离线模式。权限、限流、分支保护或网络失败均停止本轮发布，不自行降级安全设置。
+
+## 外部修改与规模边界
+
+通过 Agent 的资料新增、更新、删除必须走 apply，保证图与正文同提交。远端人工改正文后可 `reindex` 重建图；该命令只修派生目录，不负责补写人工删除的 tombstone、清理原件或追溯语义变化。删除请走 apply。verify 失败时先查看原因，不能用 reindex 掩盖非法记录或悬空引用。
+
+树目录超过 GitHub 递归接口上限时按子树递归读取，不将截断视为完整。写入/verify 为保证一致性仍需把权威文件加载到内存；这不占用 Agent 的全部上下文，但会消耗 API 请求与机器内存。单次原件导入上限 20 MiB；更大资料需要在内存中按自然边界拆分。本版没有 LFS、对象存储、GitLab/SSH 或向量检索支持。
+
+普通删除只改变当前版本，Git 历史和远端未引用对象不等于被清除。彻底忘记的范围及历史处理见 mutations.md，不提供自动历史清洗。旧版本已有的本地副本不会自动迁移或删除，若存在须单独确认资料已在远端完整保存后处理。
+
+实现依据：[Git Database API 与空仓库初始化](https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-your-git-database)、[Git Trees API](https://docs.github.com/en/rest/git/trees)、[非强制更新引用](https://docs.github.com/en/rest/git/refs)。
