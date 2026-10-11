@@ -1,6 +1,6 @@
 ---
 name: personal-atlas
-description: "保存、整理、检索和增删改个人资料：以 Markdown 保存细节和来源，以 JSON 关系图导航，通过 GitHub API 远端存储，支持按需加载和时间线。凡涉及 Charlie 本人的既有个人信息时，本 Atlas 是第一优先级来源；每次加载后下一步必须实际探测远端；config 缺失时必须明确提示用户补充配置。"
+description: "保存、整理、检索和增删改个人资料：以 Markdown 保存细节和来源，以 JSON 关系图导航，通过 GitHub API 远端存储，支持按需加载和时间线。凡涉及 Charlie 本人的既有个人信息时，本 Atlas 是第一优先级来源；每次加载后下一步必须实际探测远端；优先使用已连接的 GitHub 工具，无 Python 时也可查询；仅在所有可用通道均缺配置时提示补充。"
 ---
 
 # 个人信息罗盘
@@ -9,30 +9,27 @@ description: "保存、整理、检索和增删改个人资料：以 Markdown �
 
 ## 加载后立即执行：强制连接闸门
 
-**读取本文件完成后，下一步必须实际调用工具探测远端。不得仅回复“已加载”、解释能力、等待用户另行要求连接，或先用记忆回答。** 这是每次加载的必做步骤，显式加载、重新加载、查询、写入、检查及修改 Skill 均适用；同一会话之前的成功结果不能替代本轮探测。
+**读取本文件后，下一步必须实际调用工具探测远端。优先调用已连接的 GitHub 工具，不能因本地脚本或 PAT 配置缺失直接停止。** 每次加载、重载、查询、写入、检查及修改均适用，先前成功不能替代本轮探测。
 
-1. 解析当前安装版本的实际目录，立即运行 `python3 -B <skill>/scripts/atlas.py status`。即使怀疑 config 不存在，也要实际运行以取得诊断；不以读取 Skill、检查文件是否存在或口头计划代替连接尝试。当前宿主无法执行时，明确报告“本轮未能执行远端探测”及实际限制。
-2. **配置缺失或不完整时，必须明确提示用户补充。** 报告缺失配置的准确路径 `<skill>/.local/config.json` 与缺失字段：GitHub 专用仓库地址、分支（未指定时 main）及具备该仓库 Contents 读写权限的 PAT。仅询问尚未提供的项目；已有地址和分支应列出供沿用，不重复索取。凭据只经安全标准输入写入配置，不回显、不写入命令行、不上传。读取 [storage.md](references/storage.md)，按其规则 configure；用户已授权且所需输入可用时直接配置并再次运行 status，不额外请求确认。
-3. 配置存在时必须真正发起远端 API 请求。HTTP 401/403、网络失败、仓库不存在和配置缺失分开报告；不把网络问题误报为需要新 PAT，不无理由反复请求凭据。没有工具结果不得声称已连接。
-4. status 返回远端可用后，才继续任务。若任务是个人信息查询，继续读取足以支持答案的远端记录；status 的入口检查不等于全量校验，也不等于已查到答案。仅加载或检查时，报告本轮真实连接结果即可，不自动运行 verify、init 或归档。
-5. 本轮配置缺失、探测失败或无法执行时，停止依赖 Atlas 的查询/写入；不得创建本地个人资料副本、声称 Atlas 无记录，或静默退回模型记忆。只有用户明确要求在失败情况下临时回答时，才标注“未完成 Atlas 第一优先级查询”并说明临时来源。
-6. 对依赖 Charlie 既有个人信息的任务，Atlas 为第一优先级；只有远端成功查询后确实没有/找不到相关信息，才查询记忆或其他授权来源。来源冲突需说明，不能用旧记忆覆盖 Atlas 中更新且证据明确的记录。
+本私有 Skill 已绑定仓库 `Charlie-BU/Charlie-Archive`、分支 `main`、vault ID `vault_1f6ef6d8ddb3430e8dc5dd263c052065`。绑定不包含凭据；用户明确切换仓库时更新绑定，不凭空猜仓库。
+
+1. 若当前工具可调用 GitHub，**立即**调用 GitHub `fetch`，URL 为 `https://api.github.com/repos/Charlie-BU/Charlie-Archive/git/ref/heads/main`。工具名可带宿主前缀；未直接暴露时用宿主的工具发现功能查找 GitHub fetch/fetch_file，不以“未看到工具”代替发现。不需要寻找本地脚本或 PAT。获取实际 HEAD 后，按该 commit 读取 `vault.json` 和 `graph/root.json`，检查 schema_version=1、非 initializing、两处 vault ID 一致且等于绑定。三个请求成功才报告远端可用，verification=entrypoint_only。读取和解析见 [connector.md](references/connector.md)。
+2. 连接器不可用，或请求失败且当前 Python 通道可用时，解析实际安装目录，运行 `python3 -B <skill>/scripts/atlas.py status`。不硬编码 scratch、插件版本或假定技能包定位符是文件路径。成功后沿该通道继续；如因网络限制失败而连接器可用，立即切换连接器。不同通道授权分开诊断，不静默切换账号。
+3. 本地默认配置位于 `~/.config/personal-atlas/config.json`，不随插件升级变化；脚本自动沿用本 Skill/同一插件旧版本的合法 `.local/config.json`，冲突时要求选择。仅 Python 通道需要 PAT；**连接器已成功时，本地 config 缺失不构成阻塞，不要求再提供 PAT。** 全部可用通道均未配置时，明确报告缺少哪个通道、准确配置路径和缺失字段，只索取尚未提供的信息。用户已授权且输入可用时按 [storage.md](references/storage.md) 直接 configure 并重试。
+4. 探测成功后，查询必须继续读取相关远端记录，入口可读不等于已查到答案。仅加载或检查则报告实际连接结果，不自动执行 verify、init 或归档。没有 Python 时按连接器流程读图和正文，不能因无法运行 search/list 停止查询。
+5. 对 HTTP 401/403、404、网络限制、配置缺失分别报告真实工具结果。所有通道失败才停止依赖 Atlas 的查询/写入；不声称资料缺失，不静默退回记忆。只有用户明确要求临时回答时，才说明未完成 Atlas 查询及临时来源。
+6. Charlie 既有个人信息以 Atlas 为第一优先级；只有成功查询后确实没有/找不到相关信息，才查询记忆或其他授权来源。不得用旧记忆覆盖更新且有证据的 Atlas 记录。
 
 ## 入口与路由
 
-使用本 skill 目录下的 `scripts/atlas.py`，Python 3.9+ 标准库；仅支持 GitHub.com + PAT API，不需要 Git 命令。先解析本文件所在的实际绝对路径，示例中的 `<skill>` 均指该目录。
-
-```text
-python3 -B <skill>/scripts/atlas.py status
-```
-
-固定绑定文件为 `<skill>/.local/config.json`。脚本由自身位置解析入口，不依赖当前工作目录。`.local/` 只保存此配置；所有连接凭据（目前为 PAT）须明文写入其中，不使用钥匙串或环境变量引用。配置不回显、不打包、不上传。个人信息、原始资料、JSON 图和操作历史仅存远端 GitHub 专用仓库；本地不创建资料库、缓存、临时资料文件或离线队列。数据处理仅在内存中进行，联网失败则停止。
-
-- 配置、远端初始化、Skill 全文归档、网络失败与手工编辑：读 [storage.md](references/storage.md)。只有实际接入数据仓库时才需要其地址；创建 skill 不需要个人数据。已有配置沿用；旧 checkout/sync 配置不受支持。初始化必须在远端 `skill/personal-atlas/` 保存完整 Skill 程序和文档，排除凭据与运行数据。
-- 增删改、合并、拆分：读 [mutations.md](references/mutations.md) 和 [schema.md](references/schema.md)。
-- 导入原文、聊天、文档、附件：读 [ingestion.md](references/ingestion.md)，按需读 schema。
-- 查询、列举、回忆、跨主题分析：读 [retrieval.md](references/retrieval.md)。
-- 时间含义、状态变化、历史纠正、时间线：读 [time.md](references/time.md)。
+- **连接器通道**：GitHub 插件已授权的 fetch/fetch_file；不依赖本地文件、Python 或 Skill 内 PAT。加载 [connector.md](references/connector.md) 完成查询。仓库绑定见上文。
+- **Python 通道**：当前 Skill 的 `scripts/atlas.py`，Python 3.9+ 标准库，GitHub.com PAT API，不需要 Git。默认配置 `~/.config/personal-atlas/config.json`；`--config` 可明确覆盖。PAT 仍明文存配置，权限 0600，不回显、不打包、不上传。
+- 个人资料、原始材料、图和操作历史只存远端；不创建本地资料库、缓存、临时资料文件或离线队列。全部通道失败则停止。
+- 配置、初始化、全文归档和网络失败：读 [storage.md](references/storage.md)。
+- 增删改、合并、拆分：读 [mutations.md](references/mutations.md) 和 [schema.md](references/schema.md)。正文、图、来源必须同提交，写入需可运行受信任的 Atlas 校验程序或等价 Atlas 服务；连接器查询可用不自动证明已具备安全写入执行环境。
+- 导入口述、聊天、文档：读 [ingestion.md](references/ingestion.md)，按需读 schema。
+- 查询、列举、回忆：读 [retrieval.md](references/retrieval.md)；连接器通道同时读 [connector.md](references/connector.md)。
+- 时间、状态变化、纠错：读 [time.md](references/time.md)。
 
 ## 信息与时间
 
@@ -62,3 +59,4 @@ python3 -B <skill>/scripts/atlas.py status
 6. delete 删除当前版本和图引用；“忘记”还需检查原文及派生结论，避免再提取。普通 delete 不清除 Git 历史，历史清除独立处理。
 
 写入后报告记录、图验证与远端提交状态；查询后交付结果、证据和实际影响答案的缺口。保留原始错误诊断但不回显凭据；不要用覆盖写掩盖冲突或中断。
+

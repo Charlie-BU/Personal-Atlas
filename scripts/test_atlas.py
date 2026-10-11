@@ -310,11 +310,43 @@ class AtlasRemoteTests(unittest.TestCase):
             self.assertNotIn(CONFIG['credentials']['token'], json.dumps(result))
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual([p for p in Path(directory).rglob('*') if p.is_file()], [path])
-        self.assertEqual(atlas.config_path(atlas.parser().parse_args(['status'])), atlas.SKILL / '.local/config.json')
+        self.assertEqual(atlas.config_path(atlas.parser().parse_args(['status'])), Path.home() / '.config/personal-atlas/config.json')
         with self.assertRaises(AtlasError):
             validate_config({**CONFIG, 'checkout': '/tmp/local'})
         with self.assertRaises(AtlasError):
             validate_config({**CONFIG, 'remote': 'https://token@github.com/example/repo'})
+
+    def test_config_survives_plugin_upgrade(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'home'
+            plugin = Path(directory) / 'charlie-personal-skills'
+            old = plugin / '0.1.7/skills/personal-atlas/.local/config.json'
+            new = plugin / '0.1.8/skills/personal-atlas'
+            old.parent.mkdir(parents=True)
+            old.write_text(json.dumps(CONFIG))
+            new.mkdir(parents=True)
+            args = atlas.parser().parse_args(['status'])
+            with patch.object(atlas, 'SKILL', new), patch.object(Path, 'home', return_value=home):
+                self.assertEqual(atlas.load_config(args), CONFIG)
+                stable = atlas.config_path(args)
+                self.assertEqual(stable.stat().st_mode & 0o777, 0o600)
+                # The stable config remains usable after the old install disappears.
+                old.unlink()
+                with patch.object(atlas, 'SKILL', plugin / '0.1.9/skills/personal-atlas'):
+                    self.assertEqual(atlas.load_config(args), CONFIG)
+
+    def test_ambiguous_legacy_config_requires_explicit_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'home'
+            plugin = Path(directory) / 'charlie-personal-skills'
+            for version, branch in [('0.1.6', 'main'), ('0.1.7', 'other')]:
+                path = plugin / version / 'skills/personal-atlas/.local/config.json'
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({**CONFIG, 'branch': branch}))
+            with patch.object(atlas, 'SKILL', plugin / '0.1.8/skills/personal-atlas'), patch.object(Path, 'home', return_value=home):
+                with self.assertRaisesRegex(AtlasError, 'differ'):
+                    atlas.load_config(atlas.parser().parse_args(['status']))
+                self.assertFalse(atlas.config_path(atlas.parser().parse_args(['status'])).exists())
 
     def test_auth_header_and_error_redaction(self):
         api = GitHub(CONFIG)
@@ -341,3 +373,4 @@ class AtlasRemoteTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

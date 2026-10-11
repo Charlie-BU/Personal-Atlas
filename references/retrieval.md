@@ -4,7 +4,7 @@
 
 ## 命令
 
-默认读 skill 的 .local/config.json。--config 和 --snapshot 是全局参数，放子命令之前。
+连接器通道按 [connector.md](connector.md) 读图与正文，无需脚本。以下命令仅适用于 Python 通道，默认读 ~/.config/personal-atlas/config.json。--config 和 --snapshot 是全局参数，放子命令之前。
 
 ```text
 python3 -B <skill>/scripts/atlas.py status
@@ -58,3 +58,4 @@ list/search/timeline 支持 --type/--domain/--status/--include-retracted。默�
 回答先给结论、再给关键依据，保留远端 commit URL、仓库内路径、record/claim ID、source locator。时间条目新到旧；未记录、未处理、冲突、推断分别表达。
 
 每次查询从 GitHub 获取当前分支并固定快照，不使用本地资料缓存。list/timeline/neighbors 优先读取图摘要；search 扫描正文；verify 才执行全库完整性检查。接口限流或网络失败需说明未完成范围，不用旧本地文件补答。
+

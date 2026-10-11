@@ -1,10 +1,10 @@
 # GitHub 远端存储与明文连接配置
 
-仅支持 GitHub.com、HTTPS PAT 和 REST API，Python 3.9+ 标准库即可运行，不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `<skill>/.local/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
+支持已授权 GitHub 连接器查询（无需 Python/PAT，见 connector.md），以及 Python 3.9+ 标准库通过 HTTPS PAT 调用 REST API 的完整读写通道。不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `~/.config/personal-atlas/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
 
 ## 配置与凭据
 
-固定入口仍为 `<skill>/.local/config.json`，由脚本自身位置解析；`--config` 可指定另一份配置。`.local/` 只放配置，不能用来存资料。配置格式为：
+Python 通道的跨版本固定入口为 `~/.config/personal-atlas/config.json`，由脚本自身位置解析；`--config` 可指定另一份配置。此目录只放配置，不能存个人资料。旧 `<skill>/.local/config.json` 自动迁移；同一插件多个旧配置内容不同则停止并要求显式选择。配置跨本机插件版本复用，不保证跨宿主机器共享。连接器通道复用其自身授权，不依赖此文件。配置格式为：
 
 ```json
 {
@@ -19,7 +19,7 @@
 }
 ```
 
-**所有连接凭据明文保存在该 config.json 中。** 当前唯一支持的认证是 PAT，token 字段直接存令牌，不是环境变量名、钥匙串引用或加密密文。不从系统 Git、SSH Agent、钥匙串、`GH_TOKEN` 或 `GITHUB_TOKEN` 隐式取凭据。地址中不能夹带令牌。PAT 可使用 classic 或 fine-grained 类型；需能读写所选仓库，fine-grained 授予该仓库的 Contents 读写权限。连接权限不足时保留 GitHub 错误码，不擅自切换账户。
+**所有连接凭据明文保存在该 config.json 中。** Python 通道支持的认证是 PAT，token 字段直接存令牌，不是环境变量名、钥匙串引用或加密密文。不从系统 Git、SSH Agent、钥匙串、`GH_TOKEN` 或 `GITHUB_TOKEN` 隐式取凭据。地址中不能夹带令牌。PAT 可使用 classic 或 fine-grained 类型；需能读写所选仓库，fine-grained 授予该仓库的 Contents 读写权限。连接权限不足时保留 GitHub 错误码，不擅自切换账户。
 
 用 `configure --stdin` 从内存输入上述 JSON，脚本只创建配置文件，权限设为 0600；不会回显 token。已有配置不覆盖，需明确编辑字段。凭据更新仍写回同一文件。运行配置不打包到 Skill 发布包，也不随 Skill 副本上传到资料仓库。
 
@@ -76,3 +76,4 @@ GitHub Git Database API 不能直接写空仓库。init 先用 Contents API 创�
 普通删除只改变当前版本，Git 历史和远端未引用对象不等于被清除。彻底忘记的范围及历史处理见 mutations.md，不提供自动历史清洗。旧版本已有的本地副本不会自动迁移或删除，若存在须单独确认资料已在远端完整保存后处理。
 
 实现依据：[Git Database API 与空仓库初始化](https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-your-git-database)、[Git Trees API](https://docs.github.com/en/rest/git/trees)、[非强制更新引用](https://docs.github.com/en/rest/git/refs)。
+

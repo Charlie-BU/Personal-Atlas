@@ -325,12 +325,41 @@ def derive(files):
 
 
 def config_path(args):
-    return Path(args.config).expanduser().resolve() if args.config else SKILL / ".local/config.json"
+    return Path(args.config).expanduser().resolve() if args.config else Path.home() / ".config/personal-atlas/config.json"
+
+
+def migrate_config(args):
+    """Move a validated legacy binding out of versioned plugin directories."""
+    destination = config_path(args)
+    if args.config or destination.exists():
+        return
+    candidates = [SKILL / ".local/config.json"]
+    # Only inspect earlier versions of this same plugin, never unrelated caches.
+    if SKILL.parent.name == "skills" and SKILL.parent.parent.parent.name == "charlie-personal-skills":
+        plugin = SKILL.parent.parent.parent
+        candidates.extend(plugin.glob("*/skills/personal-atlas/.local/config.json"))
+    configs = []
+    for candidate in set(candidates):
+        if candidate.is_file():
+            config = json.loads(candidate.read_text())
+            validate_config(config)
+            configs.append(config)
+    if not configs:
+        return
+    require(all(c == configs[0] for c in configs),
+            "Multiple legacy configurations differ; select one explicitly with --config")
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(encoded(configs[0]))
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def load_config(args):
+    migrate_config(args)
     path = config_path(args)
-    require(path.is_file(), "Configure .local/config.json first; remote GitHub storage is required")
+    require(path.is_file(), "Configure " + str(path) + " first, or use the connected GitHub transport; remote storage is required")
     config = json.loads(path.read_text())
     validate_config(config)
     return config
@@ -665,7 +694,7 @@ def ingest(root, args, content):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--config", help="Defaults to <skill>/.local/config.json (plaintext credentials)")
+    p.add_argument("--config", help="Defaults to ~/.config/personal-atlas/config.json (plaintext credentials)")
     p.add_argument("--snapshot", help="Reject if the current remote branch no longer matches")
     sub = p.add_subparsers(dest="command", required=True)
     configure_parser = sub.add_parser("configure")
@@ -795,3 +824,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
