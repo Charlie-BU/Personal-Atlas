@@ -2,29 +2,15 @@
 
 先明确对象、所需信息类型、时间、当前/历史、完整程度。能从对话确定就直接查；只有同名或范围歧义会改变答案时才问。
 
-## 命令
+## 展示选择
 
-连接器通道按 [connector.md](connector.md) 读图与正文，无需脚本。以下命令仅适用于 Python 通道，默认读 ~/.config/personal-atlas/config.json。--config 和 --snapshot 是全局参数，放子命令之前。
+“看全量信息”“看 Atlas”“看图/图谱”或浏览关系，优先按 [visualization.md](visualization.md) 交付可交互 HTML，并简述内容范围与缺口。简单事实或具体关系问答可直接用文字回答；信息较多或适合用图探索时，也可在答案中询问用户是否需要 HTML。用户指定其他格式时遵循其选择。图中的完整摘要不等于全部正文或原件，不能降低用户要求的完整程度。
 
-```text
-python3 -B <skill>/scripts/atlas.py status
-python3 -B <skill>/scripts/atlas.py graph
-python3 -B <skill>/scripts/atlas.py search "小明"
-python3 -B <skill>/scripts/atlas.py search "搬家 杭州" --match any --domain life
-python3 -B <skill>/scripts/atlas.py list --type state --status active
-python3 -B <skill>/scripts/atlas.py neighbors domain:work --relation in_domain --direction incoming
-python3 -B <skill>/scripts/atlas.py neighbors person_self --relation about --direction incoming
-python3 -B <skill>/scripts/atlas.py read <id> --offset 0 --limit 80
-python3 -B <skill>/scripts/atlas.py source <source-id> --offset 0 --limit 80
-python3 -B <skill>/scripts/atlas.py timeline --domain work --since 2020 --until 2026
-python3 -B <skill>/scripts/atlas.py --snapshot <commit> list --type event --offset 30
-```
+## 工具查询与可选纯计算
 
-search 按空白分词作大小写不敏感子串匹配，默认每个词都命中；--match any 为任一词。中文两字姓名直接可查。不会自动语义改写；agent 对模糊问题生成别名和不同措辞，联合图检索。
+按 [connector.md](connector.md) 读取固定 commit 的图与正文，不依赖 Python、PAT 或本地配置文件。search/list/read/source/neighbors/timeline 是操作名称，可由 agent 通过现有工具读取并在内存筛选；不调用已删除的远端脚本。
 
-list/search/timeline 支持 --type/--domain/--status/--include-retracted。默认排除 retracted，包含历史和争议；不能把所有结果称为当前事实。
-
-分页 offset 从0开始；默认30项，最大200。read/source 默认80行，read 为正文行，source 为原文行。next_offset 非空则还有下一页。
+需要脚本校验、搜索或分页时，将工具已读取的快照按 [mutations.md](mutations.md) 的 stdin 信封交给 atlas.py。脚本仅处理提供的文件，不连接远端；未提供的页不能算已查询。search 按空白分词做大小写不敏感子串匹配，默认全部命中，--match any 为任一词；对模糊问题生成别名与不同表述。默认排除 retracted，历史与争议不能称为当前事实。分页 next_offset 非空时继续读取。
 
 ## 沿图检索
 
@@ -41,7 +27,7 @@ list/search/timeline 支持 --type/--domain/--status/--include-retracted。默�
 
 “全部工作经历”按领域与 state/project/event 等相关类型枚举，沿人、状态、机构、项目查漏。source 提取覆盖不足时只能说已整理资料范围内完整。
 
-不以 top-k、第一页或预算耗尽作为找全标准。逐页到结束；超大结果分批完整交付，聊天给摘要和远端引用；需要持久保存时使用远端记录，不写本地结果文件；用户明确请求的可视化 HTML 按 visualization.md 交付。
+不以 top-k、第一页或预算耗尽作为找全标准。逐页到结束；超大结果分批完整交付，聊天给摘要和远端引用；需要持久保存时使用远端记录，不写本地结果文件；全量浏览、Atlas、图谱或关系展示优先按 visualization.md 交付 HTML。
 
 检索过程保留 snapshot、纳入/排除边界、已访问节点/页、未读候选、未处理来源、冲突和截断。回复中只展开影响答案的部分，不掩盖缺口。
 
@@ -57,5 +43,5 @@ list/search/timeline 支持 --type/--domain/--status/--include-retracted。默�
 
 回答先给结论、再给关键依据，保留远端 commit URL、仓库内路径、record/claim ID、source locator。时间条目新到旧；未记录、未处理、冲突、推断分别表达。
 
-每次查询从 GitHub 获取当前分支并固定快照，不使用本地资料缓存。list/timeline/neighbors 优先读取图摘要；search 扫描正文；verify 才执行全库完整性检查。接口限流或网络失败需说明未完成范围，不用旧本地文件补答。
+每次查询通过现有 Git 工具获取当前分支并固定快照，不使用本地资料缓存。list/timeline/neighbors 优先读取图摘要；search 扫描正文；verify 才执行全库完整性检查。接口限流或网络失败需说明未完成范围，不用旧本地文件补答。
 

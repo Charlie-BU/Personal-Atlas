@@ -7,12 +7,12 @@ from pathlib import Path
 import re
 import sys
 from urllib.parse import urlparse
-from remote_store import AtlasError, require
+from atlas import AtlasError, require
 
 
 def validate(data):
     require(isinstance(data, dict), 'Expected a graph object')
-    require(isinstance(data.get('snapshot'), str) and re.fullmatch(r'[0-9a-f]{40}', data['snapshot']), 'Invalid snapshot')
+    require(isinstance(data.get('snapshot'), str) and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', data['snapshot']), 'Invalid snapshot')
     root = data.get('root', {})
     require(root.get('schema_version') == 1 and isinstance(root.get('vault_id'), str), 'Invalid graph root')
     nodes, edges = data.get('nodes'), data.get('edges')
@@ -34,7 +34,7 @@ def validate(data):
             url = node.get(key)
             if url:
                 parsed = urlparse(url)
-                require(parsed.scheme == 'https' and parsed.hostname == 'github.com' and not parsed.username, 'Unsafe record URL')
+                require(parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment, 'Unsafe record URL')
     return data
 
 

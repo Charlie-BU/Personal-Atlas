@@ -3,13 +3,13 @@
 ## 保存和提取是两步
 
 ```text
-python3 -B <skill>/scripts/atlas.py ingest --stdin --name input.txt --title "来源标题" --domain life
-python3 -B <skill>/scripts/atlas.py source <返回的source_id> --offset 0 --limit 80
+python3 -B <skill>/scripts/atlas.py --stdin ingest --name input.txt --title "来源标题" --domain life
+python3 -B <skill>/scripts/atlas.py --stdin source <返回的source_id> --offset 0 --limit 80
 ```
 
-ingest 从 stdin 在内存接收原始字节、计算哈希、建立 source 节点、生成图并提交到远端；不调用模型做提取。返回 extraction=unprocessed。已存同哈希会返回原 source_id，不重复复制。删除过的来源哈希被标记，不能因重新导入而悄悄复活。
+ingest 从 mutations.md 定义的 stdin 信封接收快照与 source_base64 原始字节、计算哈希、建立 source 节点并准备完整变更；现有 Git 工具负责发布与远端确认；不调用模型做提取。返回 extraction=unprocessed。已存同哈希会返回原 source_id，不重复复制。删除过的来源哈希被标记，不能因重新导入而悄悄复活。
 
-用户口述也要保存为来源：在内存构造准确原话、说话人和本轮可核验的日期/上下文，再经 stdin 传给 ingest。用工具 stdin 或 subprocess.run(..., input=raw_bytes)；不得写入临时文件，也不要使用可能被 shell 落盘的 heredoc。只保存用户授权记忆的相关内容，不把整个会话或机器上的其他文件擅自导入。
+用户口述也要保存为来源：在内存构造准确原话、说话人和本轮可核验的日期/上下文，再按信封格式经 stdin 传给 ingest。用工具 stdin 或 subprocess.run(..., input=raw_bytes)；不得写入临时文件，也不要使用可能被 shell 落盘的 heredoc。只保存用户授权记忆的相关内容，不把整个会话或机器上的其他文件擅自导入。
 
 ## 分批处理
 

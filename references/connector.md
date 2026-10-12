@@ -1,28 +1,27 @@
-# GitHub 连接器：无需 Python 的远端查询
+# 使用 agent 已有 Git 能力
 
-本私有版本绑定 `Charlie-BU/Charlie-Archive`、`main`、vault ID `vault_1f6ef6d8ddb3430e8dc5dd263c052065`。使用当前已授权的 GitHub 插件；无需重新索取 PAT。连接器缺失时先发现工具，不自行浏览登录或把令牌发给其他服务。
+本 Skill 不含远端客户端。发现宿主提供的连接器、插件或已授权 Git/CLI，选择与外部配置的主机、仓库和身份匹配的能力。例如 GitHub 可使用 ChatGPT GitHub plugin；GitLab、Gitee、自建服务使用其适配工具。未直接暴露时使用宿主工具发现功能，不把“未看到”直接视为不存在。能力仍缺失时提示用户连接/启用；不自写 HTTP 客户端作为兜底，也不要求仅为读取再提供 PAT。
 
-## 连接检查
+## 连接与快照
 
-1. GitHub fetch 请求 `https://api.github.com/repos/Charlie-BU/Charlie-Archive/git/ref/heads/main`，取 object.sha。
-2. fetch_file 参数 repository_full_name=`Charlie-BU/Charlie-Archive`、ref=该 commit，分别读取 `vault.json` 和 `graph/root.json`。
-3. 解析工具 structuredContent.content（可能是 JSON 字符串；部分宿主在 structuredContent.result 或嵌套 structuredContent 返回）。检查 vault schema_version=1、无 phase=initializing；graph schema_version=1；vault.id、graph.vault_id 与绑定一致。任何工具 isError 或错误内容均算失败，不把“Action completed”当成功。
-4. 报告实际 snapshot、remote_checked=true、verification=entrypoint_only。不运行全库 verify。固定 commit 的 Contents 读取为入口可读检查，不冒称 Blob 哈希或全库校验。
-5. 全轮按该 commit 读取。最终需要最新状态时重新取 HEAD；变化后复核受影响记录，不能拼接不同快照。
+1. 解析外部配置，包括当前上下文与上层 plugin 说明；必要信息齐全即可继续，本机 config.json 不可访问不阻塞。仅所有可用来源仍无仓库地址时提示补充。无分支先查询仓库默认分支。
+2. 实际查询目标分支 HEAD，固定 commit 读取 vault.json 和 graph/root.json。
+3. 解析实际工具返回，检查 schema_version=1、vault 非 initializing、vault.id=graph.vault_id。配置 expected_vault_id 时再匹配。错误标记、业务错误及缺失内容均算失败，不以工具完成提示代替成功。
+4. 报告 snapshot、remote_checked=true、verification=entrypoint_only。仅入口可读不等于全库验证。查询继续读取相关记录。
+5. 同轮分页/多跳固定 commit；需要最新状态时重读 HEAD，变化后复核。若工具无法读取固定版本，说明限制，不声称一致快照。
 
-## 查询映射
+## 按图查询
 
-- graph/list/search：按 `graph/root.json` 的 node_pages 逐页 fetch_file。本 schema 的 node_pages 是节点 ID 数组；候选 ID 对应 `graph/nodes/<id 中的冒号替换为双短横线>.json`。节点文件包含摘要、type/status/domain、记录 path 及 adjacency；先读相关领域节点和其 incoming 邻接，或从 ID 与别名选择候选，再读节点指向的 records 路径。domain 节点通常没有正文 path，不能据此判断无记录。字段以实际返回为准。
-- 若节点页缺少路径，用 fetch 请求 `https://api.github.com/repos/Charlie-BU/Charlie-Archive/git/commits/<commit>` 得 tree.sha，再请求 `.../git/trees/<tree>?recursive=1` 定位 records 与 graph 路径。truncated=true 时按子树继续，不能当完整目录。
-- read/source：fetch_file 读取实际记录或来源路径，ref 固定 commit。必要时使用 start_line/end_line 分页并确认剩余内容；正文的否定、条件、例外及证据不能仅靠摘要回答。
-- neighbors：读取 graph 下实际对应邻接页，限定领域、关系和方向；无需把所有个人资料加载进上下文。
-- timeline：按 root 的 timeline_pages 读相关页，按现实时间解释；未知时间不补造。
-- 模糊问题多别名检索；某次关键词无结果不证明没有。完整查询需遍历相关页至末页，说明未处理来源范围。
-- 引用固定 commit 的 GitHub 文件 URL 或 record ID；不要在最终回复暴露无关个人信息。
-- connector 模式不使用脚本的 search/list 命令，读图再读正文即可。查到资料后直接回答，不把“缺本地 config”当额外门槛。
+- root.node_pages 是分页文件路径数组；读取每页取得节点 ID，再读 `graph/nodes/<id 中冒号替换为双短横线>.json`。节点含摘要、类型、状态、领域、正文 path 与 adjacency。
+- domain 节点通常没有正文，沿 incoming 领域边选择相关记录；不能据此判断无资料。
+- neighbors 按指定关系、方向读取对应 adjacency 页；timeline 按 root.timeline_pages 读取。处理全部相关分页与工具截断。
+- read/source 读取节点实际指向的正文/原件，必要时按行分页。否定、条件、例外不能仅靠摘要回答。
+- 路径不明确时用现有工具列固定 commit 的目录；不构造硬编码平台 API。
+- 模糊问题多别名检索。完整查询须遍历相关范围至末页，说明未处理来源。
+- 引用 record ID 或工具提供的固定 commit 文件链接；自建服务链接由其实际 URL 格式确定，不携带认证信息。
 
-## 写入边界
+## 写入能力
 
-GitHub 连接器授权与本地 PAT 授权独立。连接器可以上传 tree/commit/ref，但 Atlas 资料写入仍需受信任程序完整验证并生成正文、来源、图、清单及去重操作记录。使用可执行 Python 或提供等价校验的 Atlas 服务，沿 mutations.md 的 apply 规则同提交发布并确认 HEAD。不得只用 update_file 改 records 或手编 graph，也不得因查询通道可用就谎报自动同步已完成。
+先确认工具支持一次提交中增删多个文件、基于 base_commit 的并发保护和非强制分支更新，以及读取提交结果。查询能力不代表写能力。使用 mutations.md 的纯计算流程准备完整变更，再将内容交给现有工具发布；Skill 脚本的 prepared 状态不是远端保存成功。
 
-仅归档静态 Skill 文件时可使用 GitHub Git Database 工具，明确范围，保留资料文件；若归档影响 canonical revision，按现有 derive 生成相应元数据，不做资料 CRUD。无写入执行环境时仍完成可用的查询，并准确报告写入阻塞；不要把局部写入限制扩展成所有查询不可用。
+不直接逐文件 update records 后补图，避免产生不一致版本。工具缺少安全提交能力或当前环境没有受信任的校验能力时，说明具体写入限制，仍继续授权的查询。不同工具账号/权限分别诊断，不静默切换身份。

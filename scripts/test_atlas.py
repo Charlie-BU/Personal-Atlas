@@ -1,135 +1,61 @@
-"""Remote contract tests with a GitHub API double; all personal data is synthetic and in RAM."""
+"""Pure calculation contracts; synthetic files in RAM, no remote client."""
 import base64
-import copy
-import hashlib
 import io
 import json
 from pathlib import Path
 import sys
-import tempfile
 import unittest
 from unittest.mock import patch
-
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import atlas
-from remote_store import APIError, AtlasError, GitHub, RemoteFiles, UnknownOutcome, blob_sha, validate_config
-
-CONFIG = {"schema_version": 2, "provider": "github",
-          "remote": "https://github.com/example/personal-atlas.git", "branch": "main",
-          "credentials": {"type": "pat", "token": "synthetic-test-token"}}
+from atlas import AtlasError
 
 
-class FakeGitHub(GitHub):
+class MemoryFiles:
+    """Test fixture simulating the agent accepting a prepared changeset."""
     def __init__(self):
-        super().__init__(copy.deepcopy(CONFIG))
-        self.blobs, self.trees, self.commits, self.refs, self.calls = {}, {}, {}, {}, []
-        self.fail_at = None
-        self.lost_patch_response = False
-        self.race = False
-        self.truncate = False
+        self.files, self.commit, self.calls = {}, None, []
 
-    def object(self, collection, value):
-        key = hashlib.sha1(atlas.encoded(value)).hexdigest()
-        collection[key] = copy.deepcopy(value)
-        return key
+    def head(self):
+        return self.commit
 
-    def add_blob(self, value):
-        sha = blob_sha(value)
-        self.blobs[sha] = value
-        return sha
+    def snapshot(self):
+        return atlas.Snapshot(dict(self.files), self.commit,
+            {p: 'https://git.example.org/user/vault/blob/' + self.commit + '/' + p
+             for p in self.files} if self.commit else {})
 
-    def commit(self, tree, parent=None):
-        return self.object(self.commits, {"tree": {"sha": tree}, "parents": [parent] if parent else []})
-
-    def request(self, method, endpoint, payload=None):
-        self.calls.append((method, endpoint, copy.deepcopy(payload)))
-        if self.fail_at and self.fail_at in endpoint and method != 'GET':
-            raise AtlasError("simulated network failure")
-        branch = self.branch
-        if method == 'GET' and endpoint == '':
-            return {"default_branch": "main"}
-        if endpoint.startswith('/branches'):
-            return [{"name": k} for k in self.refs][:1]
-        if endpoint.startswith('/git/ref/heads/'):
-            if branch not in self.refs:
-                raise APIError(409, 'empty repository')
-            return {"object": {"sha": self.refs[branch]}}
-        if method == 'PUT' and endpoint == '/contents/vault.json':
-            if self.refs:
-                raise APIError(422, 'content already exists')
-            sha = self.add_blob(base64.b64decode(payload['content']))
-            tree = self.object(self.trees, {'vault.json': sha})
-            self.refs[branch] = self.commit(tree)
-            return {"commit": {"sha": self.refs[branch]}}
-        if endpoint == '/git/blobs' and method == 'POST':
-            return {'sha': self.add_blob(base64.b64decode(payload['content']))}
-        if endpoint.startswith('/git/blobs/'):
-            sha = endpoint.rsplit('/', 1)[1]
-            return {'encoding': 'base64', 'content': base64.b64encode(self.blobs[sha]).decode()}
-        if endpoint == '/git/trees' and method == 'POST':
-            tree = dict(self.trees[payload['base_tree']])
-            for item in payload['tree']:
-                if item['sha'] is None:
-                    del tree[item['path']]
-                else:
-                    tree[item['path']] = item['sha']
-            return {'sha': self.object(self.trees, tree)}
-        if endpoint.startswith('/git/trees/'):
-            sha = endpoint.rsplit('/', 1)[1].split('?')[0]
-            entries = self.trees[sha]
-            if self.truncate and '?' in endpoint:
-                return {'truncated': True, 'tree': []}
-            # Nonrecursive fallback has actual subtrees to exercise recursive walking.
-            if '?' not in endpoint:
-                immediate, subtrees = {}, {}
-                for path, value in entries.items():
-                    if '/' in path:
-                        folder, rest = path.split('/', 1)
-                        subtrees.setdefault(folder, {})[rest] = value
-                    else:
-                        immediate[path] = value
-                items = [{'path': p, 'sha': v, 'type': 'blob', 'mode': '100644'} for p, v in immediate.items()]
-                items += [{'path': p, 'sha': self.object(self.trees, v), 'type': 'tree', 'mode': '040000'}
-                          for p, v in subtrees.items()]
-            else:
-                items = [{'path': p, 'sha': v, 'type': 'blob', 'mode': '100644'} for p, v in entries.items()]
-            return {'truncated': False, 'tree': items}
-        if endpoint == '/git/commits' and method == 'POST':
-            target = self.object(self.commits, {'tree': {'sha': payload['tree']},
-                                              'parents': payload['parents'], 'message': payload['message']})
-            return {'sha': target}
-        if endpoint.startswith('/git/commits/'):
-            return self.commits[endpoint.rsplit('/', 1)[1]]
-        if endpoint.startswith('/git/refs/heads/') and method == 'PATCH':
-            assert payload['force'] is False
-            if self.race:
-                current = self.refs[branch]
-                self.refs[branch] = self.object(self.commits, {'tree': self.commits[current]['tree'],
-                    'parents': [current], 'message': 'concurrent writer'})
-                self.race = False
-            target = payload['sha']
-            if self.refs[branch] not in self.commits[target]['parents']:
-                raise APIError(422, 'not a fast-forward')
-            self.refs[branch] = target
-            if self.lost_patch_response:
-                self.lost_patch_response = False
-                raise AtlasError('response lost after successful patch')
-            return {'object': {'sha': target}}
-        raise AssertionError((method, endpoint, payload))
+    def accept(self, result):
+        if result.get('status') != 'prepared':
+            return
+        assert result['base_commit'] == self.commit
+        for p in result['delete_paths']:
+            self.files.pop(p)
+        self.files.update({p: base64.b64decode(v) for p, v in result['files_base64'].items()})
+        self.commit = atlas.digest(atlas.encoded({p: atlas.digest(v) for p, v in self.files.items()}))[:40]
 
 
-class AtlasRemoteTests(unittest.TestCase):
+class AtlasCalculationTests(unittest.TestCase):
     def setUp(self):
-        self.api = FakeGitHub()
+        self.api = MemoryFiles()
         self.run_cli('init')
-        self.source = self.run_cli('ingest', '--stdin', '--name', 'input.txt',
+        self.source = self.run_cli('ingest', '--name', 'input.txt',
                                   data='测试材料。\n小明喜欢茶。\n2024年搬家。\n'.encode())['source_id']
 
     def run_cli(self, *argv, data=b''):
-        args = atlas.parser().parse_args(argv)
-        with patch('sys.stdin', io.TextIOWrapper(io.BytesIO(data), encoding='utf-8')):
-            return atlas.run(args, api=self.api)
+        argv = tuple(a for a in argv if a != '--stdin')
+        args = atlas.parser().parse_args(['--stdin', *argv])
+        root = self.api.snapshot()
+        payload = {'snapshot': root.commit,
+                   'files_base64': {p: base64.b64encode(v).decode() for p, v in root.items()},
+                   'urls': root.urls}
+        if args.command == 'apply':
+            payload['plan'] = json.loads(data)
+        if args.command == 'ingest':
+            payload['source_base64'] = base64.b64encode(data).decode()
+        result = atlas.run(args, payload)
+        self.api.accept(result)
+        return result
 
     def record(self, rid, kind='topic', temporal=None, relations=None):
         return {'id': rid, 'type': kind, 'title': '测试' + rid, 'summary': '测试记录范围',
@@ -145,36 +71,7 @@ class AtlasRemoteTests(unittest.TestCase):
         return {'operation_id': atlas.uid('op'), 'base_commit': self.api.head(), 'changes': changes}
 
     def apply(self, changes):
-        return self.run_cli('apply', '--stdin', data=atlas.encoded(self.plan(changes)))
-
-    def test_init_archives_complete_skill_and_excludes_credentials(self):
-        files = self.api.snapshot()
-        expected = atlas.skill_bundle()
-        self.assertGreaterEqual(len(expected), 12)
-        self.assertEqual({p: files[p] for p in files if p.startswith(atlas.SKILL_PREFIX)}, expected)
-        self.assertFalse(any('.local/' in p or p.endswith('/config.json') for p in files))
-        self.assertEqual(self.run_cli('init')['status'], 'already_initialized')
-        self.assertEqual(self.run_cli('verify')['status'], 'valid')
-
-    def test_bootstrap_resume(self):
-        self.api = FakeGitHub()
-        self.api.fail_at = '/git/blobs'
-        with self.assertRaises(AtlasError):
-            self.run_cli('init')
-        self.assertEqual(set(self.api.snapshot()), {'vault.json'})
-        self.api.fail_at = None
-        self.assertTrue(self.run_cli('init')['remote_confirmed'])
-        self.assertEqual(self.run_cli('verify')['status'], 'valid')
-
-    def test_nonatlas_and_missing_branch_rejected(self):
-        api = FakeGitHub()
-        sha = api.add_blob(b'existing unrelated repository')
-        api.refs['main'] = api.commit(api.object(api.trees, {'README.md': sha}))
-        with self.assertRaisesRegex(AtlasError, 'not an empty'):
-            atlas.initialize(api)
-        api.branch = 'missing'
-        with self.assertRaisesRegex(AtlasError, 'branch missing'):
-            atlas.initialize(api)
+        return self.run_cli('apply', data=atlas.encoded(self.plan(changes)))
 
     def test_crud_graph_and_source(self):
         self.apply([self.put(self.record('person_x', kind='person')),
@@ -236,131 +133,6 @@ class AtlasRemoteTests(unittest.TestCase):
         with self.assertRaisesRegex(AtlasError, 'semantic time'):
             self.apply([self.put(self.record('bad', 'event'))])
 
-    def test_snapshot_pagination_and_lazy_record_reads(self):
-        self.apply([self.put(self.record('first')), self.put(self.record('second'))])
-        first = self.run_cli('list', '--type', 'topic', '--limit', '1')
-        self.assertEqual(first['next_offset'], 1)
-        self.api.calls.clear()
-        self.run_cli('--snapshot', first['snapshot'], 'list', '--type', 'topic', '--offset', '1')
-        files = self.api.snapshot()
-        raw_shas = {v['sha'] for p, v in files.entries.items() if p.startswith(('records/', 'sources/'))}
-        self.assertFalse(any(ep.startswith('/git/blobs/') and ep.rsplit('/', 1)[1] in raw_shas
-                             for _, ep, _ in self.api.calls))
-        self.apply([self.put(self.record('third'))])
-        with self.assertRaisesRegex(AtlasError, 'Snapshot changed'):
-            self.run_cli('--snapshot', first['snapshot'], 'list')
-
-    def test_truncated_tree_inventory_is_complete(self):
-        expected = set(self.api.snapshot())
-        self.api.truncate = True
-        self.assertEqual(set(self.api.snapshot()), expected)
-        self.assertEqual(self.run_cli('verify')['status'], 'valid')
-
-    def test_failed_upload_does_not_publish_partial_graph(self):
-        before = self.api.head()
-        self.api.fail_at = '/git/trees'
-        with self.assertRaises(AtlasError):
-            self.apply([self.put(self.record('unpublished'))])
-        self.assertEqual(self.api.head(), before)
-        self.api.fail_at = None
-        self.assertEqual(self.run_cli('verify')['status'], 'valid')
-
-    def test_lost_response_is_confirmed_and_retry_is_idempotent(self):
-        plan = self.plan([self.put(self.record('kept'))])
-        self.api.lost_patch_response = True
-        result = self.run_cli('apply', '--stdin', data=atlas.encoded(plan))
-        self.assertTrue(result['remote_confirmed'])
-        self.assertEqual(self.run_cli('apply', '--stdin', data=atlas.encoded(plan))['status'], 'already_applied')
-
-    def test_racing_writer_is_not_overwritten(self):
-        self.api.race = True
-        with self.assertRaises(UnknownOutcome):
-            self.apply([self.put(self.record('racing'))])
-        self.assertNotIn('records/topic/racing.md', self.api.snapshot())
-        self.assertEqual(self.api.commits[self.api.head()]['message'], 'concurrent writer')
-
-    def test_reindex_and_archive_skill(self):
-        files = self.api.snapshot()
-        damaged = dict(files)
-        damaged.pop('graph/root.json')
-        self.api.publish(files, damaged, 'synthetic external graph removal')
-        with self.assertRaises(AtlasError):
-            self.run_cli('verify')
-        self.assertTrue(self.run_cli('reindex')['remote_confirmed'])
-        self.assertEqual(self.run_cli('archive-skill')['status'], 'unchanged')
-        self.assertEqual(self.run_cli('verify')['status'], 'valid')
-
-    def test_no_personal_data_disk_writes(self):
-        def forbidden(*args, **kwargs):
-            raise AssertionError('Unexpected disk write')
-        with patch('os.open', forbidden), patch.object(Path, 'write_bytes', forbidden), \
-             patch.object(Path, 'write_text', forbidden), patch.object(Path, 'mkdir', forbidden):
-            self.apply([self.put(self.record('ram_only'))])
-            self.run_cli('source', self.source)
-            self.run_cli('verify')
-            self.run_cli('archive-skill')
-
-    def test_config_plaintext_only_runtime_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / '.local/config.json'
-            args = atlas.parser().parse_args(['--config', str(path), 'configure', '--stdin'])
-            with patch('sys.stdin', io.StringIO(json.dumps(CONFIG))):
-                result = atlas.configure(args)
-            self.assertEqual(json.loads(path.read_text())['credentials']['token'], CONFIG['credentials']['token'])
-            self.assertNotIn(CONFIG['credentials']['token'], json.dumps(result))
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            self.assertEqual([p for p in Path(directory).rglob('*') if p.is_file()], [path])
-        self.assertEqual(atlas.config_path(atlas.parser().parse_args(['status'])), Path.home() / '.config/personal-atlas/config.json')
-        with self.assertRaises(AtlasError):
-            validate_config({**CONFIG, 'checkout': '/tmp/local'})
-        with self.assertRaises(AtlasError):
-            validate_config({**CONFIG, 'remote': 'https://token@github.com/example/repo'})
-
-    def test_config_survives_plugin_upgrade(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory) / 'home'
-            plugin = Path(directory) / 'charlie-personal-skills'
-            old = plugin / '0.1.7/skills/personal-atlas/.local/config.json'
-            new = plugin / '0.1.8/skills/personal-atlas'
-            old.parent.mkdir(parents=True)
-            old.write_text(json.dumps(CONFIG))
-            new.mkdir(parents=True)
-            args = atlas.parser().parse_args(['status'])
-            with patch.object(atlas, 'SKILL', new), patch.object(Path, 'home', return_value=home):
-                self.assertEqual(atlas.load_config(args), CONFIG)
-                stable = atlas.config_path(args)
-                self.assertEqual(stable.stat().st_mode & 0o777, 0o600)
-                # The stable config remains usable after the old install disappears.
-                old.unlink()
-                with patch.object(atlas, 'SKILL', plugin / '0.1.9/skills/personal-atlas'):
-                    self.assertEqual(atlas.load_config(args), CONFIG)
-
-    def test_ambiguous_legacy_config_requires_explicit_selection(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory) / 'home'
-            plugin = Path(directory) / 'charlie-personal-skills'
-            for version, branch in [('0.1.6', 'main'), ('0.1.7', 'other')]:
-                path = plugin / version / 'skills/personal-atlas/.local/config.json'
-                path.parent.mkdir(parents=True)
-                path.write_text(json.dumps({**CONFIG, 'branch': branch}))
-            with patch.object(atlas, 'SKILL', plugin / '0.1.8/skills/personal-atlas'), patch.object(Path, 'home', return_value=home):
-                with self.assertRaisesRegex(AtlasError, 'differ'):
-                    atlas.load_config(atlas.parser().parse_args(['status']))
-                self.assertFalse(atlas.config_path(atlas.parser().parse_args(['status'])).exists())
-
-    def test_auth_header_and_error_redaction(self):
-        api = GitHub(CONFIG)
-        captured = []
-        class Opener:
-            def open(self, request, timeout):
-                captured.append(request)
-                raise OSError('error ' + CONFIG['credentials']['token'])
-        api.opener = Opener()
-        with self.assertRaises(AtlasError) as caught:
-            api.request('GET', '')
-        self.assertNotIn(CONFIG['credentials']['token'], str(caught.exception))
-        self.assertEqual(captured[0].get_header('Authorization'), 'Bearer ' + CONFIG['credentials']['token'])
-
     def test_binary_source_and_duplicate_ingest(self):
         raw = b'\xff\x00test'
         result = self.run_cli('ingest', '--stdin', '--name', 'test.bin', data=raw)
@@ -371,6 +143,48 @@ class AtlasRemoteTests(unittest.TestCase):
         self.assertIn('/blob/', response['url'])
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    def test_preparation_does_not_publish_or_require_credentials(self):
+        root = self.api.snapshot()
+        plan = self.plan([self.put(self.record('ready'))])
+        result = atlas.apply_plan(root, plan)
+        self.assertEqual(result['status'], 'prepared')
+        self.assertFalse(result['remote_confirmed'])
+        self.assertEqual(self.api.head(), root.commit)
+        self.assertNotIn('records/topic/ready.md', root)
+        self.assertIn('records/topic/ready.md', result['files_base64'])
+        self.assertTrue(any(p.startswith('graph/') for p in result['files_base64']))
 
+    def test_init_unique_ids_and_nonatlas_rejection(self):
+        one = atlas.initialize(atlas.Snapshot({}, None))
+        two = atlas.initialize(atlas.Snapshot({}, None))
+        self.assertNotEqual(one['vault_id'], two['vault_id'])
+        self.assertFalse(one['remote_confirmed'])
+        with self.assertRaises(AtlasError):
+            atlas.initialize(atlas.Snapshot({'README.md': b'unrelated'}, 'a' * 40))
+
+    def test_stdin_pipeline_has_no_network_or_data_file_writes(self):
+        root = self.api.snapshot()
+        payload = {'snapshot': root.commit,
+                   'files_base64': {p: base64.b64encode(v).decode() for p, v in root.items()},
+                   'plan': self.plan([self.put(self.record('pipeline'))])}
+        args = atlas.parser().parse_args(['--stdin', 'apply'])
+        with patch('sys.stdin', io.StringIO(json.dumps(payload))), \
+             patch('socket.socket', side_effect=AssertionError('network attempted')), \
+             patch.object(Path, 'write_bytes', side_effect=AssertionError('data written')), \
+             patch.object(Path, 'write_text', side_effect=AssertionError('data written')):
+            self.assertEqual(atlas.run(args)['status'], 'prepared')
+        damaged = self.api.snapshot()
+        damaged.pop('graph/root.json')
+        with self.assertRaises(AtlasError):
+            atlas.apply_plan(damaged, payload['plan'])
+
+    def test_snapshot_and_path_validation(self):
+        with self.assertRaises(AtlasError):
+            atlas.Snapshot({'../outside': b''}, 'a' * 40)
+        args = atlas.parser().parse_args(['--stdin', '--snapshot', 'b' * 40, 'status'])
+        with self.assertRaisesRegex(AtlasError, 'Snapshot mismatch'):
+            atlas.run(args, {'snapshot': 'a' * 40, 'files_base64': {}})
+
+
+if __name__ == '__main__':
+    unittest.main()

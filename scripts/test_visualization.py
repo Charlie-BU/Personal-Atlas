@@ -10,12 +10,12 @@ import unittest
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_atlas
-from remote_store import AtlasError
+from atlas import AtlasError
 from visualization import collect, render, export
 
 class VisualizationTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = test_atlas.AtlasRemoteTests()
+        self.fixture = test_atlas.AtlasCalculationTests()
         self.fixture.setUp()
         f = self.fixture
         f.apply([f.put(f.record('event_a', 'event', {'mode': 'point', 'at': '2024'})),
@@ -25,9 +25,7 @@ class VisualizationTests(unittest.TestCase):
     def test_complete_inventory_and_no_remote_mutation(self):
         self.assertEqual(len(self.data['nodes']), self.data['root']['node_count'])
         before = self.fixture.api.head()
-        self.fixture.api.calls.clear()
         collect(self.fixture.api.snapshot())
-        self.assertTrue(all(c[0] == 'GET' for c in self.fixture.api.calls))
         self.assertEqual(before, self.fixture.api.head())
 
     def test_missing_node_edge_and_bad_incoming_rejected(self):
@@ -61,6 +59,11 @@ class VisualizationTests(unittest.TestCase):
             self.assertEqual([p.name for p in Path(temp).iterdir()], ['atlas.html'])
             with self.assertRaises(AtlasError):
                 export(self.data, path)
+
+    def test_service_neutral_links(self):
+        for host in ['github.com', 'gitlab.com', 'gitee.com', 'git.example.org']:
+            self.data['nodes'][0]['url'] = 'https://' + host + '/user/vault/blob/' + 'a' * 40 + '/record.md'
+            render(self.data)
 
     def test_unsafe_link_rejected(self):
         self.data['nodes'][0]['url'] = 'javascript:alert(1)'

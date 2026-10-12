@@ -1,10 +1,10 @@
 # 增删改与图同步
 
-所有增删改使用 JSON 操作包，经 apply 发布。脚本在内存验证提案，再经 GitHub API 将正文、图、manifest 与操作记录发布为一个远端提交。图不单独手工维护。
+所有增删改使用 JSON 操作包，经 apply 发布。脚本在内存验证提案并生成变更，再由 agent 已有 Git 能力将正文、图、manifest 与操作记录发布为一个远端提交。图不单独手工维护。
 
 ## 操作包
 
-先 status 取得 snapshot，read 取得完整 meta/body 和 sha256。操作包只保存在内存，通过 stdin 传给脚本；不写临时文件，不将原文拼接为 shell 命令。
+先用现有工具取得 HEAD 与完整固定快照，read 取得完整 meta/body 和 sha256。操作包只保存在内存，通过 stdin 传给脚本；不写临时文件，不将原文拼接为 shell 命令。
 
 ```json
 {
@@ -30,7 +30,7 @@
 ```
 
 ```text
-python3 -B <skill>/scripts/atlas.py apply --stdin
+python3 -B <skill>/scripts/atlas.py --stdin apply
 ```
 
 - 新记录 put 不带 expected_sha256。
@@ -64,10 +64,29 @@ python3 -B <skill>/scripts/atlas.py apply --stdin
 
 1. 从远端固定快照校验 base_commit、记录旧哈希和现有目录。
 2. 在内存构造完整提案，检查格式、时间、来源、覆盖单元、ID 和关系。
-3. 确定性生成图，上传变更 blob 和 tree；正文与图属于同一个 commit。
+3. 确定性生成图，准备变更文件与删除列表，再由现有工具生成同一个 commit。
 4. 再核对分支，使用 force=false 发布。并发变化时停止，不覆盖别人的提交。
 5. 读取远端 HEAD 确认后报告 remote_saved；响应丢失时报告 remote_outcome_unknown，再按原 operation_id 与原内容核查重试。
 
 没有本地锁、日志、恢复目录或待推送记录。远端未被分支引用的 Git 对象可能保留，但不会作为成功版本交给查询。失败后不要使用新 operation_id 盲目重复写。
 
-远端人工编辑必须同样同步目录；reindex 仅重建图，不能补全人工删除的历史语义。普通增删改都使用 apply，不直接手改图。具体 API 行为与配置见 storage.md。
+远端人工编辑必须同样同步目录；reindex 仅重建图，不能补全人工删除的历史语义。普通增删改使用 apply 或等价受信任校验能力，不直接手改图。配置与工具能力边界见 storage.md。
+
+## 纯计算脚本输入与输出
+
+atlas.py 不读取配置、认证、联网或更新分支。所有命令均以 `--stdin` 接收一个 JSON 信封；通过工具 stdin 或子进程 input 传入，不落盘保存资料或把内容拼进 shell 命令。
+
+```json
+{
+  "snapshot": "<现有工具读取的固定commit>",
+  "files_base64": {"vault.json": "<文件原始字节的base64>", "graph/root.json": "<base64>", "其他路径": "<base64>"},
+  "urls": {"records/topic/example.md": "<可选的无凭据固定提交HTTPS链接>"},
+  "plan": {"operation_id": "op_example", "base_commit": "<同一commit>", "changes": []}
+}
+```
+
+apply/verify/reindex/ingest/归档需要完整文件清单及内容（含已有静态 Skill 副本），不得把部分数据伪装成完整快照。查询按所用命令提供全部相关页和正文。plan 仅 apply 需要；ingest 用 source_base64 字段传原始字节，并以 --name 指定文件名。init 仅对工具已确认的空目标传 files_base64={}；无初始提交时 snapshot=null。脚本会生成新 vault ID，不改外部配置。
+
+写命令输出 status=prepared、base_commit、message、files_base64（新增/更新）及 delete_paths。它们只是经过校验的变更，remote_confirmed=false；agent 必须解码并交给现有工具，在 base_commit 未变化时原子发布，再读远端核查结果。重复操作的 already_applied/already_imported 也只说明输入快照已包含记录，远端状态仍由实际工具确认。不要把脚本输出直接当保存回执。
+
+可用命令：init、apply、ingest、verify、reindex、archive-skill、status、graph、search、list、read、source、neighbors、timeline、visualize。archive-skill 仅在用户要求归档时使用；无 Python 可用等价受信任校验能力，不能省略结构校验和同提交发布。

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Personal Atlas: GitHub API storage only; no local personal-data files or cache."""
+"""Personal Atlas: in-memory validation and change preparation; no remote transport."""
 import argparse
 import base64
 import datetime as dt
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -13,9 +12,15 @@ import uuid
 from collections.abc import Mapping
 
 sys.dont_write_bytecode = True
-from remote_store import AtlasError, APIError, UnknownOutcome, GitHub, RemoteFiles, require, validate_config
+class AtlasError(Exception):
+    pass
 
-VERSION = 1  # Record/graph schema; remote connection configuration is version 2.
+
+def require(condition, message):
+    if not condition:
+        raise AtlasError(message)
+
+VERSION = 1  # Record/graph schema; connection configuration is external.
 SKILL = Path(__file__).resolve().parents[1]
 SKILL_PREFIX = "skill/personal-atlas/"
 ID = re.compile(r"^[a-z][a-z0-9_-]{0,95}$")
@@ -324,63 +329,6 @@ def derive(files):
 
 
 
-def config_path(args):
-    return Path(args.config).expanduser().resolve() if args.config else Path.home() / ".config/personal-atlas/config.json"
-
-
-def migrate_config(args):
-    """Move a validated legacy binding out of versioned plugin directories."""
-    destination = config_path(args)
-    if args.config or destination.exists():
-        return
-    candidates = [SKILL / ".local/config.json"]
-    # Only inspect earlier versions of this same plugin, never unrelated caches.
-    if SKILL.parent.name == "skills" and SKILL.parent.parent.parent.name == "charlie-personal-skills":
-        plugin = SKILL.parent.parent.parent
-        candidates.extend(plugin.glob("*/skills/personal-atlas/.local/config.json"))
-    configs = []
-    for candidate in set(candidates):
-        if candidate.is_file():
-            config = json.loads(candidate.read_text())
-            validate_config(config)
-            configs.append(config)
-    if not configs:
-        return
-    require(all(c == configs[0] for c in configs),
-            "Multiple legacy configurations differ; select one explicitly with --config")
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(encoded(configs[0]))
-        stream.flush()
-        os.fsync(stream.fileno())
-
-
-def load_config(args):
-    migrate_config(args)
-    path = config_path(args)
-    require(path.is_file(), "Configure " + str(path) + " first, or use the connected GitHub transport; remote storage is required")
-    config = json.loads(path.read_text())
-    validate_config(config)
-    return config
-
-
-def configure(args):
-    config = json.load(sys.stdin)
-    validate_config(config)
-    path = config_path(args)
-    require(not path.exists(), "Configuration exists; edit its plaintext fields explicitly")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Configuration is the sole runtime file written locally. No data temp files.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(encoded(config))
-        stream.flush()
-        os.fsync(stream.fileno())
-    return {"status": "configured", "config": str(path), "credentials_storage": "plaintext",
-            "remote_initialized": False}
-
-
 def skill_bundle():
     bundle = {}
     candidates = []
@@ -403,8 +351,7 @@ def skill_bundle():
         if path.is_file():
             bundle[SKILL_PREFIX + relative.as_posix()] = path.read_bytes()
     require(SKILL_PREFIX + "SKILL.md" in bundle and
-            SKILL_PREFIX + "scripts/atlas.py" in bundle and
-            SKILL_PREFIX + "scripts/remote_store.py" in bundle, "Skill bundle is incomplete")
+            SKILL_PREFIX + "scripts/atlas.py" in bundle, "Skill bundle is incomplete")
     return bundle
 
 
@@ -418,51 +365,42 @@ def checked(root):
     return root, records
 
 
+class Snapshot(dict):
+    """Files supplied by the agent's existing tools, never fetched by this module."""
+    def __init__(self, files, commit, urls=None):
+        require(commit is None or isinstance(commit, str) and
+                re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit), "Invalid commit")
+        require(isinstance(files, dict), "Files must be a complete path/content mapping")
+        for path in files:
+            require(isinstance(path, str) and path and not path.startswith("/") and
+                    "\\" not in path and all(part not in {"", ".", ".."} for part in path.split("/")),
+                    "Unsafe repository path")
+        super().__init__(files)
+        self.commit, self.urls = commit, urls or {}
+
+    def url(self, path):
+        return self.urls.get(path)
+
+
 def publish(root, proposed, message):
     require(all(owned(p) for p in proposed), "Unexpected file in operation")
-    return root.api.publish(root, proposed, message)
+    return {"status": "prepared", "base_commit": head(root), "message": message,
+            "files_base64": {p: base64.b64encode(v).decode("ascii")
+                             for p, v in proposed.items() if p not in root or root[p] != v},
+            "delete_paths": sorted(set(root) - set(proposed)), "remote_confirmed": False}
 
 
-def initialize(api):
-    current = api.head(allow_missing=True)
-    if current is None:
-        repository = api.request("GET", "")
-        branches = api.request("GET", "/branches?per_page=1")
-        require(not branches, "Configured branch missing in a nonempty repository; refusing initialization")
-        require(api.branch == repository["default_branch"],
-                "Empty repository initialization must use its default branch")
-        # Git database APIs cannot initialize an empty GitHub repository.
-        # One recoverable bootstrap commit precedes the complete Atlas commit.
-        vault = {"schema_version": VERSION, "id": uid("vault"), "created_at": now(),
-                 "phase": "initializing", "storage": "github_api"}
-        try:
-            api.request("PUT", "/contents/vault.json", {
-                "message": "Bootstrap Personal Atlas", "branch": api.branch,
-                "content": base64.b64encode(encoded(vault)).decode()})
-        except AtlasError as error:
-            raise AtlasError("Initialization not confirmed; rerun init to inspect/resume remote bootstrap. " + str(error)) from None
-    files = api.snapshot()
-    require("vault.json" in files, "Remote is not an empty or existing Atlas repository")
-    vault = json.loads(files["vault.json"])
-    require(vault.get("schema_version") == VERSION and isinstance(vault.get("id"), str),
-            "Unsupported remote vault")
-    if vault.get("phase") == "initializing":
-        require(set(files) == {"vault.json"} and vault.get("storage") == "github_api",
-                "Unexpected files in partial initialization; inspect remote state")
-        vault["phase"] = "ready"
-        proposed = {"vault.json": encoded(vault), ".gitignore": b".DS_Store\n.local/\n__pycache__/\n*.pyc\n",
-                    **skill_bundle()}
-    else:
-        checked(files)
-        proposed = canonical(files)
-        # Keep the initialized snapshot on repeat init; deliberate upgrades use archive-skill.
-        if SKILL_PREFIX + "SKILL.md" in files:
-            return {"status": "already_initialized", "commit": files.commit,
-                    "remote_confirmed": True, "skill_directory": SKILL_PREFIX, "vault_id": vault["id"]}
-        proposed.update(skill_bundle())
+def initialize(root):
+    if root:
+        checked(root)
+        return {"status": "already_initialized", "commit": head(root),
+                "verification": "supplied_files", "remote_confirmed": False}
+    vault = {"schema_version": VERSION, "id": uid("vault"), "created_at": now(),
+             "phase": "ready", "storage": "git"}
+    proposed = {"vault.json": encoded(vault), ".gitignore": b".DS_Store\n.local/\n__pycache__/\n*.pyc\n"}
     generated, _ = derive(proposed)
-    return {**publish(files, {**proposed, **generated}, "Initialize Atlas with complete skill snapshot"),
-            "vault_id": vault["id"], "skill_directory": SKILL_PREFIX}
+    return {**publish(root, {**proposed, **generated}, "Initialize Personal Atlas"),
+            "vault_id": vault["id"]}
 
 
 class LazyRecords(Mapping):
@@ -516,7 +454,7 @@ def apply_plan(root, plan):
     if op_path in files:
         prior = json.loads(data_bytes(files[op_path]))
         require(prior.get("plan_sha256") == plan_hash, "Operation ID reused with different content")
-        return {"status": "already_applied", "commit": head(root), "remote_confirmed": True}
+        return {"status": "already_applied", "commit": head(root), "remote_confirmed": False}
     require(plan.get("base_commit") == head(root), "Stale base_commit; inspect changes and rebuild plan")
     require(isinstance(plan.get("changes"), list) and plan["changes"], "Empty change plan")
     proposed = canonical(files)
@@ -664,7 +602,7 @@ def ingest(root, args, content):
     for record in records.values():
         if record["meta"].get("source", {}).get("sha256") == content_hash:
             return {"status": "already_imported", "source_id": record["meta"]["id"],
-                    "commit": head(root), "remote_confirmed": True}
+                    "commit": head(root), "remote_confirmed": False}
     for path in files:
         if path.startswith("operations/"):
             operation = json.loads(files[path])
@@ -694,19 +632,15 @@ def ingest(root, args, content):
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--config", help="Defaults to ~/.config/personal-atlas/config.json (plaintext credentials)")
-    p.add_argument("--snapshot", help="Reject if the current remote branch no longer matches")
+    p.add_argument("--snapshot", help="Require the supplied snapshot to match")
     sub = p.add_subparsers(dest="command", required=True)
-    configure_parser = sub.add_parser("configure")
-    configure_parser.add_argument("--stdin", action="store_true", required=True)
+    p.add_argument("--stdin", action="store_true", required=True, help="Snapshot envelope from agent tools")
     for command in ("init", "status", "verify", "reindex", "graph", "archive-skill"):
         sub.add_parser(command)
     apply = sub.add_parser("apply")
-    apply.add_argument("--stdin", action="store_true", required=True, help="JSON operation from stdin; no plan file")
     visual = sub.add_parser("visualize", help="Export a complete standalone HTML graph")
     visual.add_argument("--output", required=True, help="New HTML deliverable path")
     ing = sub.add_parser("ingest")
-    ing.add_argument("--stdin", action="store_true", required=True, help="Raw bytes from stdin; never spooled to disk")
     ing.add_argument("--name", required=True)
     ing.add_argument("--title")
     ing.add_argument("--summary")
@@ -738,13 +672,15 @@ def parser():
     return p
 
 
-def run(args, api=None):
-    if args.command == "configure":
-        return configure(args)
-    api = api or GitHub(load_config(args))
+def run(args, payload=None):
+    payload = payload if payload is not None else json.load(sys.stdin)
+    root = Snapshot({p: base64.b64decode(v, validate=True)
+                     for p, v in payload["files_base64"].items()},
+                    payload.get("snapshot"), payload.get("urls"))
+    require(not args.snapshot or args.snapshot == root.commit, "Snapshot mismatch")
     if args.command == "init":
-        return initialize(api)
-    root = api.snapshot(args.snapshot)
+        return initialize(root)
+    require(root.commit is not None, "Existing Atlas needs a fixed commit")
     require("vault.json" in root, "Remote is not an Atlas repository; run init")
     vault = json.loads(root["vault.json"])
     require(vault.get("schema_version") == VERSION and vault.get("phase") != "initializing",
@@ -764,19 +700,19 @@ def run(args, api=None):
         derived, _ = derive(files)
         return publish(root, {**files, **derived}, "Update complete Atlas skill snapshot")
     if args.command == "apply":
-        return apply_plan(root, json.load(sys.stdin))
+        return apply_plan(root, payload["plan"])
     if args.command == "ingest":
-        return ingest(root, args, sys.stdin.buffer.read(MAX_SOURCE_BYTES + 1))
+        return ingest(root, args, base64.b64decode(payload["source_base64"], validate=True))
     require("graph/root.json" in root, "Remote graph missing; inspect and run reindex")
     graph = json.loads(root["graph/root.json"])
     require(graph["vault_id"] == vault["id"], "Remote graph/vault identity mismatch")
     if args.command in {"status", "verify", "graph"}:
         if args.command == "verify":
             checked(root)
-        return {"status": "valid" if args.command == "verify" else "remote_available",
-                "snapshot": root.commit, "graph": graph, "remote_checked": True,
+        return {"status": "valid" if args.command == "verify" else "snapshot_available",
+                "snapshot": root.commit, "graph": graph, "remote_checked": False,
                 "verification": "full" if args.command == "verify" else "entrypoint_only",
-                "storage": "github_api", "local_data_storage": False}
+                "storage": "agent_supplied_snapshot", "local_data_storage": False}
     records = LazyRecords(root, metadata_only=args.command in {"list", "timeline", "neighbors"})
     if args.command in {"search", "list", "timeline"}:
         return query(root, records, args)
@@ -813,17 +749,8 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (AtlasError, ValueError, KeyError, TypeError, OSError) as error:
-        message = str(error)
-        try:
-            token = load_config(args)["credentials"]["token"]
-            message = message.replace(token, "[REDACTED]")
-        except (AtlasError, ValueError, KeyError, TypeError, OSError):
-            pass
-        result = {"status": "remote_outcome_unknown" if isinstance(error, UnknownOutcome) else "error",
-                  "error": message, "local_data_saved": False}
-        if isinstance(error, UnknownOutcome):
-            result.update(candidate_commit=error.commit, remote_confirmed=False)
-        print(json.dumps(result, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"status": "error", "error": str(error),
+                          "remote_confirmed": False}, ensure_ascii=False), file=sys.stderr)
         return 2
 
 

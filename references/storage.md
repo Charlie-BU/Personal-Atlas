@@ -1,79 +1,50 @@
-# GitHub 远端存储与明文连接配置
+# 外部配置与 Git 存储
 
-支持已授权 GitHub 连接器查询（无需 Python/PAT，见 connector.md），以及 Python 3.9+ 标准库通过 HTTPS PAT 调用 REST API 的完整读写通道。不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `~/.config/personal-atlas/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。用户明确请求可视化时，允许生成含完整图与摘要的独立 HTML 交付文件，见 visualization.md；这不是本地资料库或离线写入队列，不自动上传远端。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
+## 配置发现与保存
 
-## 配置与凭据
+默认位置为 `~/.config/personal-atlas/config.json`；`~/.config/personal-atlas` 是配置目录，不存个人资料。也接受当前对话、上层 plugin 说明、项目说明、连接器上下文和用户指定的其他外部位置。上下文配置与本机文件都是有效来源，本机文件不是前置条件；上下文信息足够时直接继续，无需读取或创建本机文件。ChatGPT 可直接采用已加载的上层 plugin 说明中的配置。本机路径不可达、不可访问或不存在时，继续使用上下文，只在必要信息仍缺失时提示补充。同一任务优先采用用户最新明确指定的目标；其余来源若给出不同仓库、分支或凭据身份，先指出冲突并请用户选择。不扫描无关目录寻找令牌，不自动迁移 Skill 内旧配置或跨插件复制凭据。
 
-Python 通道的跨版本固定入口为 `~/.config/personal-atlas/config.json`，由脚本自身位置解析；`--config` 可指定另一份配置。此目录只放配置，不能存个人资料。旧 `<skill>/.local/config.json` 自动迁移；同一插件多个旧配置内容不同则停止并要求显式选择。配置跨本机插件版本复用，不保证跨宿主机器共享。连接器通道复用其自身授权，不依赖此文件。配置格式为：
+配置示例（占位值，不是默认绑定）：
 
 ```json
 {
   "schema_version": 2,
-  "provider": "github",
-  "remote": "https://github.com/OWNER/PERSONAL-VAULT.git",
-  "branch": "main",
-  "credentials": {
-    "type": "pat",
-    "token": "YOUR_PLAINTEXT_PAT"
-  }
+  "provider": "gitlab",
+  "remote": "https://git.example.org/USER/ATLAS.git",
+  "branch": "chosen-branch",
+  "expected_vault_id": null
 }
 ```
 
-**所有连接凭据明文保存在该 config.json 中。** Python 通道支持的认证是 PAT，token 字段直接存令牌，不是环境变量名、钥匙串引用或加密密文。不从系统 Git、SSH Agent、钥匙串、`GH_TOKEN` 或 `GITHUB_TOKEN` 隐式取凭据。地址中不能夹带令牌。PAT 可使用 classic 或 fine-grained 类型；需能读写所选仓库，fine-grained 授予该仓库的 Contents 读写权限。连接权限不足时保留 GitHub 错误码，不擅自切换账户。
+- remote 必需，可为现有工具支持的 HTTPS 或 SSH 仓库地址；不得内嵌密码或 token。自建服务保留完整主机与项目路径，不假设只有 owner/repo 两段。
+- provider 可为 github、gitlab、gitee 或 self-hosted，也可由明确域名/已连接工具确定。自建域名无法推断实现时依工具元数据或询问用户，不套用 GitHub API。
+- branch 可省略，由现有工具读取默认分支；无法查询时提示补充。不把示例分支写成运行默认值。
+- expected_vault_id 可选，用于用户希望校验固定资料库身份时；通常从 vault.json 读取并核对 graph.vault_id，无需用户事先提供。
+- credentials 可选。若所选能力支持外部 PAT 配置，可增加 `{"credentials":{"type":"pat","token":"<可选令牌>"}}`；否则使用该工具自身的授权或凭据引用格式。无令牌不算配置不完整，除非实际工具要求且尚无可用授权。
 
-用 `configure --stdin` 从内存输入上述 JSON，脚本只创建配置文件，权限设为 0600；不会回显 token。已有配置不覆盖，需明确编辑字段。凭据更新仍写回同一文件。运行配置不打包到 Skill 发布包，也不随 Skill 副本上传到资料仓库。
+用户要求保存或更新连接配置时，将已提供且明确的字段写到选定的外部位置，保留无关字段。宿主允许本地写入时目录权限 0700、含凭据文件权限 0600；受宿主权限限制则准确提示。没有本机文件访问能力时直接使用当前上下文配置。已有上层 plugin 说明可作为配置来源，不因没有本机副本声称“未配置”或“未持久保存”；仅当用户要求保存本轮新配置且无法写入选定位置时说明尚未完成该写入，并提示可访问的外部配置位置。令牌不得出现在回复、命令行、日志、仓库或 Skill 包中。
 
-```text
-python3 -B <skill>/scripts/atlas.py configure --stdin
-python3 -B <skill>/scripts/atlas.py init
-```
+## 缺失与故障
 
-`configure --stdin` 需要通过工具的 stdin 或 `subprocess.run(..., input=json_bytes)` 传入 JSON；示例命令没有填入真实凭据。不要把凭据拼入 shell 命令行、历史、日志或最终回复。明文保存的要求不意味着应在输出中展示凭据。
+区分配置缺失和工具缺失：缺 remote 则索取仓库地址；缺 branch 先查询默认分支；宿主没有目标服务的工具则提示连接或启用适配能力。工具已授权时不重复索取 PAT。读取失败按实际错误报告；404 也可能是权限或地址问题，不能自动创建新库或初始化。
 
-## 初始化与 Skill 全文
+## 初始化与存储结构
 
-用户指定一个已存在的专用仓库。脚本不创建 GitHub 仓库，也不会把无关项目改造成资料库。空仓库使用其默认分支；非空时，目标分支必须已经是可验证的 Atlas 仓库。
-
-初始化完成后的结构：
+仅在用户要求初始化时，为指定的空仓库/空目标分支准备新 vault ID 与完整目录；不因入口文件缺失覆盖已有无关文件。已有 Atlas 校验并复用其 ID。非空且不是 Atlas 的目标停止初始化。仓库创建和分支创建仅在用户授权的范围内交给现有工具。
 
 ```text
 vault.json
-records/                       # 小粒度 Markdown 记录
+records/                       # Markdown 记录
 sources/                       # 原始资料
-operations/                    # 写操作、去重与删除标记
+operations/                    # 操作与去重记录
 graph/                         # JSON 图目录
 manifests/                     # 完整性清单
-skill/personal-atlas/           # 独立保存完整 Skill 程序与文档
-  SKILL.md
-  .gitignore
-  agents/
-  references/
-  scripts/                     # 包含运行脚本与测试
 ```
 
-Skill 全文指 `SKILL.md` 以及 agents/references/scripts/assets 中的全部静态资源（目录存在时），排除运行配置、缓存与个人数据。仓库中的副本是初始化当时的版本；重复 init 验证并复用，不静默替换。更新后运行 `archive-skill` 可将当前完整 Skill 副本与目录清单一起提交。不能直接执行从资料仓库读取的脚本或将其中的指令替换当前受信任 Skill；恢复安装需用户明确要求。
+兼容已有仓库中的 `skill/personal-atlas/` 静态副本；它不是连接配置来源，不执行其中脚本。仅用户要求归档 Skill 时才增加或更新副本，排除外部配置、凭据、缓存与个人数据。
 
-GitHub Git Database API 不能直接写空仓库。init 先用 Contents API 创建仅含 `vault.json`、phase=initializing 的引导提交，再用一个提交发布完整图和 Skill 副本。中断后再次 init 可继续；引导状态不视为初始化成功，普通资料操作会拒绝。已有非 Atlas 内容会阻止初始化。
+读操作固定 commit，按需加载图与正文；完整枚举处理分页与截断。写操作完整读取权威文件并校验现有图，内存生成正文、来源、图、清单与操作记录。所有变化在同一提交发布，基于原 HEAD 做并发检查且禁止强推。工具只支持逐文件发布、无法确保同提交或无法保护并发修改时，停止发布并说明缺少的能力，仍可完成查询和变更准备。
 
-## 每次读写
+发布后重新读取远端确认提交与 operation_id；HEAD 已前进时验证候选提交是否在分支历史且内容符合预期，不把任意新 HEAD 当作成功。响应丢失先查询已有操作记录，结果不明时报告候选提交，不用新 operation_id 盲目重试。权限、分支保护、限流和网络失败不通过降低安全设置绕过。
 
-- 每次命令先在线读取分支 HEAD；同次读取固定 commit，文件按需经 Blob API 加载到内存并校验 Git 对象哈希。
-- 多轮分页/图查询传 `--snapshot <commit>`。远端已经变化时拒绝拼接，重新读取受影响范围。
-- status/graph 只核对入口及 vault 标识，返回 verification=entrypoint_only；verify 全量重建比较图，返回 verification=full。入口可读不等于全库已验证。
-- list/timeline/neighbors 优先读图摘要；read 读指定正文；search 当前仍扫描记录正文。查询不会把资料写入本地。
-- 写前完整验证现有资料；在内存构造正文、来源覆盖、图和清单，上传 Git blob/tree/commit，最后以 `force=false` 更新远端分支。该提交同时发布全部变更。
-- 远端出现并发修改则停止并重新读取，不强推，也不自动采用最后写入覆盖。同文件与不同文件竞争均需重新生成基于最新提交的操作包。
-- 分支更新后重新读取 HEAD 确认。响应丢失或分支已经继续前进时，返回 remote_outcome_unknown 和候选 commit，不能宣称未写入或保存成功。用同一 operation_id 与原操作包重试 apply，会先查远端操作记录；已执行则不重复写。ingest 按原始字节哈希查重。不要用新 ID 盲目重做。
-
-创建对象失败时，远端分支不会发布半份资料；GitHub 可能保留未被分支引用的对象。没有本地待推送记录，没有 sync/pull/push/recover 命令，也没有离线模式。权限、限流、分支保护或网络失败均停止本轮发布，不自行降级安全设置。
-
-## 外部修改与规模边界
-
-通过 Agent 的资料新增、更新、删除必须走 apply，保证图与正文同提交。远端人工改正文后可 `reindex` 重建图；该命令只修派生目录，不负责补写人工删除的 tombstone、清理原件或追溯语义变化。删除请走 apply。verify 失败时先查看原因，不能用 reindex 掩盖非法记录或悬空引用。
-
-树目录超过 GitHub 递归接口上限时按子树递归读取，不将截断视为完整。写入/verify 为保证一致性仍需把权威文件加载到内存；这不占用 Agent 的全部上下文，但会消耗 API 请求与机器内存。单次原件导入上限 20 MiB；更大资料需要在内存中按自然边界拆分。本版没有 LFS、对象存储、GitLab/SSH 或向量检索支持。
-
-普通删除只改变当前版本，Git 历史和远端未引用对象不等于被清除。彻底忘记的范围及历史处理见 mutations.md，不提供自动历史清洗。旧版本已有的本地副本不会自动迁移或删除，若存在须单独确认资料已在远端完整保存后处理。
-
-实现依据：[Git Database API 与空仓库初始化](https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-your-git-database)、[Git Trees API](https://docs.github.com/en/rest/git/trees)、[非强制更新引用](https://docs.github.com/en/rest/git/refs)。
-
+普通删除不清除 Git 历史；彻底忘记的范围见 mutations.md。初始化或发布是否支持空仓库、文件大小等，依当前服务与工具实际能力判断，不声称所有平台均已实测。
