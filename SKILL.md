@@ -1,6 +1,6 @@
 ---
 name: personal-atlas
-description: "保存、整理、检索和增删改个人资料：以 Markdown 保存细节和来源，以 JSON 关系图导航，通过 GitHub API 远端存储，支持按需加载和时间线。凡涉及 Charlie 本人的既有个人信息时，本 Atlas 是第一优先级来源；每次加载后下一步必须实际探测远端；优先使用已连接的 GitHub 工具，无 Python 时也可查询；仅在所有可用通道均缺配置时提示补充。"
+description: "保存、整理、检索和增删改个人资料：以 Markdown 保存细节和来源，以 JSON 关系图导航，通过 GitHub API 远端存储，支持按需加载、时间线及独立 HTML 关系图可视化。凡涉及 Charlie 本人的既有个人信息时，本 Atlas 是第一优先级来源；每次加载后下一步必须实际探测远端；优先使用已连接的 GitHub 工具，无 Python 时也可查询；仅在所有可用通道均缺配置时提示补充。"
 ---
 
 # 个人信息罗盘
@@ -24,11 +24,12 @@ description: "保存、整理、检索和增删改个人资料：以 Markdown �
 
 - **连接器通道**：GitHub 插件已授权的 fetch/fetch_file；不依赖本地文件、Python 或 Skill 内 PAT。加载 [connector.md](references/connector.md) 完成查询。仓库绑定见上文。
 - **Python 通道**：当前 Skill 的 `scripts/atlas.py`，Python 3.9+ 标准库，GitHub.com PAT API，不需要 Git。默认配置 `~/.config/personal-atlas/config.json`；`--config` 可明确覆盖。PAT 仍明文存配置，权限 0600，不回显、不打包、不上传。
-- 个人资料、原始材料、图和操作历史只存远端；不创建本地资料库、缓存、临时资料文件或离线队列。全部通道失败则停止。
+- 个人资料、原始材料、图和操作历史只存远端；不创建本地资料库、缓存、临时资料文件或离线队列。用户明确请求可视化时，可生成含图数据和摘要的独立 HTML 交付文件；该例外不允许额外数据缓存或临时资料文件。全部通道失败则停止。
 - 配置、初始化、全文归档和网络失败：读 [storage.md](references/storage.md)。
 - 增删改、合并、拆分：读 [mutations.md](references/mutations.md) 和 [schema.md](references/schema.md)。正文、图、来源必须同提交，写入需可运行受信任的 Atlas 校验程序或等价 Atlas 服务；连接器查询可用不自动证明已具备安全写入执行环境。
 - 导入口述、聊天、文档：读 [ingestion.md](references/ingestion.md)，按需读 schema。
 - 查询、列举、回忆：读 [retrieval.md](references/retrieval.md)；连接器通道同时读 [connector.md](references/connector.md)。
+- 用户请求关系图、知识图谱或可视化 HTML：读 [visualization.md](references/visualization.md)，完整读取固定快照并使用当前共享模板生成可离线浏览、支持明暗主题的 HTML；不要另写临时布局。
 - 时间、状态变化、纠错：读 [time.md](references/time.md)。
 
 ## 信息与时间
@@ -46,7 +47,7 @@ description: "保存、整理、检索和增删改个人资料：以 Markdown �
 3. 用 read 分页读正文，必要时 source 回查原文。search 是中英文子串匹配而非向量搜索；模糊问题生成别名/不同表述，结合领域枚举，一次搜索无结果不能证明不存在。
 4. 同轮分页和多跳使用 `--snapshot <commit>`，版本变化则复核受影响查询。next_offset 非空说明还有下一页。
 5. “所有/完整/全部”按明确类型、领域、关系或来源范围枚举到末页，前几条命中不构成完整性证明。
-6. 默认分批加载约 6,000 tokens 证据，按问题调整。大结果分批交付并保留远端引用；需要持久保存时写入远端资料库，不生成本地结果文件，不静默截断。
+6. 默认分批加载约 6,000 tokens 证据，按问题调整。大结果分批交付并保留远端引用；需要持久保存时写入远端资料库；明确请求的可视化 HTML 按 visualization.md 交付，其余不生成本地结果文件，不静默截断。
 7. 保留事实 ID/来源定位，说明冲突和资料范围。“未记录”“未处理”“未知”与“没有发生”不能混用。
 
 ## 写入与同步

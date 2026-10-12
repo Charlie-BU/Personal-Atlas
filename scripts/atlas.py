@@ -703,6 +703,8 @@ def parser():
         sub.add_parser(command)
     apply = sub.add_parser("apply")
     apply.add_argument("--stdin", action="store_true", required=True, help="JSON operation from stdin; no plan file")
+    visual = sub.add_parser("visualize", help="Export a complete standalone HTML graph")
+    visual.add_argument("--output", required=True, help="New HTML deliverable path")
     ing = sub.add_parser("ingest")
     ing.add_argument("--stdin", action="store_true", required=True, help="Raw bytes from stdin; never spooled to disk")
     ing.add_argument("--name", required=True)
@@ -747,6 +749,9 @@ def run(args, api=None):
     vault = json.loads(root["vault.json"])
     require(vault.get("schema_version") == VERSION and vault.get("phase") != "initializing",
             "Remote initialization incomplete or incompatible; run init")
+    if args.command == "visualize":
+        from visualization import collect, export
+        return export(collect(root), args.output)
     if args.command == "reindex":
         require(all(owned(p) for p in root), "Unmanaged remote files; inspect before reindex")
         files = canonical(root)
@@ -824,4 +829,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

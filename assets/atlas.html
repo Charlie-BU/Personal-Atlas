@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-atlas-ui="quiet-atlas-v2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Personal Atlas · 个人信息罗盘</title>
+<script>
+// Only a theme preference is persisted. Storage may be unavailable for file URLs.
+(function () {
+  let mode = 'system';
+  try { mode = localStorage.getItem('personal-atlas.theme') || mode; } catch (_) {}
+  if (!['system', 'light', 'dark'].includes(mode)) mode = 'system';
+  const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.themeMode = mode;
+})();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fcfbf8; --panel: #fcfbf8; --canvas: #fdfcf9; --text: #252e31;
+  --muted: #747b7e; --line: #e6e7df; --control: #f5f5f0; --hover: #efF1e9;
+  --accent: #5c7653; --focus: #48643f; --selected: #edf1e7; --label: #38413e;
+  --subtle: #919893; --shadow: 0 12px 40px #2736250b; --icon-filter: none;
+  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171c1b; --panel: #1b201f; --canvas: #171c1b; --text: #e8ece4;
+  --muted: #a0aba4; --line: #303a34; --control: #222a25; --hover: #2a342c;
+  --accent: #b2c79e; --focus: #c3d8b0; --selected: #2c382b; --label: #d2ddd0;
+  --subtle: #829087; --shadow: 0 12px 40px #0002; --icon-filter: invert(1);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
+button, input, select, summary { font: inherit; }
+button { cursor: pointer; }
+button, input, select { color: var(--text); }
+button { background: transparent; border: 0; }
+a { color: var(--accent); text-underline-offset: 4px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+button:hover { background: var(--hover); }
+.icon { width: 18px; height: 18px; flex: 0 0 auto; vertical-align: middle; filter: var(--icon-filter); opacity: .7; }
+.topbar { min-height: 104px; padding: 18px 28px; display: flex; align-items: center; gap: 30px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; }
+.brand-icon { width: 48px; height: 48px; border: 1px solid var(--accent); border-radius: 50%; display: grid; place-items: center; }
+.brand-icon .icon { width: 25px; height: 25px; }
+h1 { font: 600 27px/1.25 var(--serif); letter-spacing: 1px; margin: 0 0 4px; }
+.eyebrow { color: var(--accent); font-size: 10px; letter-spacing: 2.4px; text-transform: uppercase; }
+.subtitle { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+.search-box { display: flex; align-items: center; gap: 10px; background: var(--control); border: 1px solid var(--line); border-radius: 9px; padding: 0 12px; min-width: 160px; flex: 1; max-width: 460px; margin-left: auto; }
+.search-box input { background: transparent; border: 0; outline: 0; width: 100%; min-width: 0; padding: 11px 0; font-size: 13px; }
+.search-box:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.search-box input::placeholder { color: var(--muted); }
+.search-shortcut { border: 1px solid var(--line); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; color: var(--muted); }
+.header-tools { display: flex; align-items: center; gap: 24px; }
+.theme-switch { display: flex; background: var(--control); border-radius: 22px; padding: 3px; gap: 2px; border: 1px solid var(--line); }
+.theme-switch button { border-radius: 20px; padding: 7px 9px; height: 34px; display: grid; place-items: center; font-size: 11px; }
+.theme-switch button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 5px #0001; color: var(--accent); }
+.metrics { display: flex; gap: 19px; border-left: 1px solid var(--line); padding-left: 24px; }
+.metric { text-align: center; }
+.metric strong { display: block; font: 500 23px/1.3 Georgia, serif; font-variant-numeric: tabular-nums; }
+.metric span { color: var(--muted); font-size: 11px; }
+.workspace { display: grid; grid-template-columns: 228px minmax(0, 1fr) 310px; height: calc(100dvh - 104px); min-height: 600px; }
+.sidebar { display: flex; flex-direction: column; overflow-y: auto; padding: 22px 18px; border-right: 1px solid var(--line); background: var(--panel); }
+.navigation { display: grid; gap: 5px; margin-bottom: 24px; }
+.nav-button { display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left; border-radius: 7px; font-weight: 500; border-left: 3px solid transparent; }
+.nav-button[aria-pressed="true"] { background: var(--selected); border-left-color: var(--accent); color: var(--accent); }
+.sidebar details { border-top: 1px solid var(--line); margin-top: 3px; padding: 18px 0; }
+summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; }
+summary::-webkit-details-marker { display: none; }
+summary .chevron { margin-left: auto; width: 14px; height: 14px; transform: rotate(-90deg); }
+details[open] > summary .chevron { transform: none; }
+.filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 9px; margin: 17px 0 0; }
+.filter-field { min-width: 0; }
+.filter-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+select { width: 100%; font-size: 12px; padding: 8px 5px; background: var(--control); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.list-count { color: var(--muted); font-size: 11px; font-weight: 400; margin-left: 3px; }
+.results { margin-top: 14px; display: grid; gap: 2px; }
+.result { display: flex; gap: 8px; align-items: flex-start; text-align: left; padding: 9px 8px; width: 100%; border-radius: 6px; }
+.result .color-dot { margin-top: 7px; flex-shrink: 0; }
+.result-copy { min-width: 0; }
+.result-title { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.result-meta { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.result.selected { background: var(--selected); color: var(--accent); }
+.color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sidebar-footer { color: var(--muted); font-size: 10px; margin-top: auto; padding-top: 24px; }
+.sidebar-footer button { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; padding: 5px 0; }
+.stage { position: relative; overflow: hidden; background: var(--canvas); min-width: 0; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.canvas-toolbar { position: absolute; top: 20px; left: 22px; right: 22px; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; pointer-events: none; }
+.canvas-toolbar > * { pointer-events: auto; }
+.explore-tools { display: flex; gap: 4px; }
+.tool-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 34px; height: 34px; padding: 7px 9px; font-size: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+.tool-button[aria-pressed="true"] { color: var(--accent); background: var(--selected); border-color: var(--accent); }
+.zoom-group { display: flex; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); overflow: hidden; }
+.zoom-group button { width: 35px; height: 34px; display: grid; place-items: center; border-right: 1px solid var(--line); }
+.zoom-group button:last-child { border: 0; }
+.caption { position: absolute; bottom: 18px; left: 24px; right: 24px; pointer-events: none; font-size: 11px; color: var(--muted); background: var(--canvas); width: fit-content; max-width: calc(100% - 48px); padding: 5px 0; }
+.caption strong { font-weight: 500; color: var(--text); font-size: 12px; display: block; }
+.caption p { margin: 3px 0 0; }
+.timeline { position: absolute; inset: 82px 38px 88px; overflow-y: auto; }
+.timeline-heading { font: 500 22px var(--serif); margin: 0 0 22px; }
+.timecard { padding: 18px 0 18px 20px; border-left: 1px solid var(--line); position: relative; }
+.timecard::before { content: ''; position: absolute; left: -4px; top: 25px; width: 7px; height: 7px; background: var(--accent); border-radius: 50%; }
+.timecard button { text-align: left; padding: 0; font-size: 16px; display: block; }
+.timecard small { color: var(--muted); font-size: 11px; }
+.timecard p { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 65ch; }
+.inspector { border-left: 1px solid var(--line); padding: 27px 25px; overflow-y: auto; background: var(--panel); }
+.inspector-top { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.inspector-close { margin-left: auto; padding: 4px; border-radius: 5px; display: flex; }
+.inspector h2 { font: 600 25px/1.5 var(--serif); letter-spacing: .4px; margin: 18px 0 13px; overflow-wrap: anywhere; }
+.inspector .description { font-size: 14px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 24px; }
+.meta-list { display: grid; gap: 10px; padding: 0 0 22px; border-bottom: 1px solid var(--line); }
+.meta-row { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; }
+.meta-row .icon { width: 14px; height: 14px; margin-top: 3px; }
+.meta-row .meta-label { color: var(--muted); width: 42px; flex-shrink: 0; }
+.meta-row .meta-value { overflow-wrap: anywhere; flex: 1; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 25px 0 7px; }
+.section-heading h3 { font-size: 13px; font-weight: 600; margin: 0; }
+.section-heading span { color: var(--muted); font-size: 11px; }
+.related-row { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.related-button { display: flex; align-items: flex-start; gap: 9px; text-align: left; padding: 0; width: 100%; border-radius: 4px; }
+.related-button .color-dot { flex-shrink: 0; margin-top: 8px; }
+.related-title { font-size: 13px; }
+.related-meta { font-size: 10px; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.record-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; text-decoration: none; }
+.record-id { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; margin-top: 20px; }
+.intro-kicker { margin-top: 30px; }
+.intro-mark { width: 42px; height: 42px; opacity: .4; margin-top: 30px; }
+.domain-legend { display: flex; flex-wrap: wrap; gap: 7px; margin: 22px 0; }
+.domain-legend button { display: flex; gap: 6px; align-items: center; font-size: 11px; padding: 5px 8px; background: var(--control); border-radius: 20px; }
+.provenance { border-top: 1px solid var(--line); margin-top: 27px; padding-top: 18px; color: var(--muted); font-size: 10px; }
+.provenance p { margin: 5px 0; overflow-wrap: anywhere; }
+.notice { color: var(--muted); font-size: 10px; border-top: 1px solid var(--line); padding-top: 15px; margin-top: 18px; }
+.muted { color: var(--muted); }
+[hidden] { display: none !important; }
+@media (min-width: 761px) { body { height: 100dvh; display: flex; flex-direction: column; } .topbar { flex-shrink: 0; } .workspace { height: auto; flex: 1; min-height: 0; } }
+@media (max-width: 1200px) { .topbar { gap: 18px; padding: 17px 20px; } .subtitle { display: none; } .header-tools { gap: 14px; } .metrics { gap: 13px; padding-left: 15px; } .workspace { grid-template-columns: 210px minmax(0,1fr) 280px; } .inspector { padding: 24px 20px; } h1 { font-size: 23px; } }
+@media (max-width: 1000px) { .workspace { grid-template-columns: 210px minmax(0,1fr); } .inspector { position: fixed; top: 112px; right: 14px; bottom: 20px; width: 290px; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); z-index: 4; } .inspector.idle { display: none; } .metric strong { font-size: 20px; } .search-shortcut { display: none; } }
+@media (max-width: 760px) {
+  .topbar { padding: 18px 18px 14px; gap: 16px; flex-wrap: wrap; min-height: 0; }
+  .brand { gap: 10px; } .brand-icon { width: 36px; height: 36px; } .brand-icon .icon { width: 21px; height: 21px; }
+  h1 { font-size: 21px; } .eyebrow { font-size: 8px; letter-spacing: 1.5px; }
+  .header-tools { margin-left: auto; } .metrics { display: none; } .theme-switch button { padding: 5px 7px; height: 29px; }
+  .search-box { order: 3; max-width: none; flex-basis: 100%; margin-left: 0; }
+  .workspace { height: auto; min-height: 0; display: flex; flex-direction: column; }
+  .sidebar { padding: 12px 18px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .navigation { grid-template-columns: 1fr 1fr; margin: 0 0 8px; gap: 6px; }
+  .nav-button { justify-content: center; padding: 8px 10px; border-left: 0; border-bottom: 2px solid transparent; }
+  .nav-button[aria-pressed="true"] { border-bottom-color: var(--accent); }
+  .sidebar details { padding: 11px 0; margin-top: 0; }
+  .filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 12px; }
+  .sidebar-footer { padding-top: 0; margin: 0; } .sidebar-footer .export-note { display: none; }
+  .results { max-height: 230px; overflow-y: auto; }
+  .stage { height: 68dvh; min-height: 420px; }
+  .canvas-toolbar { left: 15px; right: 15px; top: 16px; }
+  .tool-button { padding: 6px 8px; } .caption { left: 18px; right: 18px; bottom: 15px; max-width: calc(100% - 36px); }
+  .inspector { position: relative; inset: auto; border-radius: 0; border: 0; border-top: 1px solid var(--line); box-shadow: none; width: auto; padding: 24px; }
+  .inspector.idle { display: block; } .timeline { inset: 70px 24px 85px; }
+}
+@media (prefers-reduced-motion: no-preference) { button, a { transition: background-color .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-icon"><img class="icon" data-icon="compass" alt=""></span><div><div class="eyebrow">Personal Atlas</div><h1>个人信息罗盘</h1><p class="subtitle">让记录彼此连接，让经历清晰可见。</p></div></div>
+  <label class="search-box"><img class="icon" data-icon="search" alt=""><input id="search" type="search" aria-label="搜索记录、摘要或别名" placeholder="搜索记录、摘要或别名…"><span class="search-shortcut" aria-hidden="true">⌘ K</span></label>
+  <div class="header-tools">
+    <div class="theme-switch" role="group" aria-label="页面主题">
+      <button id="themeLight" data-theme-mode="light" aria-label="浅色主题" title="浅色主题" aria-pressed="false"><img class="icon" data-icon="sun" alt=""></button>
+      <button id="themeDark" data-theme-mode="dark" aria-label="深色主题" title="深色主题" aria-pressed="false"><img class="icon" data-icon="moon" alt=""></button>
+      <button id="themeSystem" data-theme-mode="system" aria-label="跟随系统" title="跟随系统" aria-pressed="true">自动</button>
+    </div>
+    <div class="metrics"><div class="metric"><strong id="records"></strong><span>记录</span></div><div class="metric"><strong id="nodeCount"></strong><span>节点</span></div><div class="metric"><strong id="edges"></strong><span>关系</span></div></div>
+  </div>
+</header>
+<main class="workspace">
+  <aside class="sidebar" aria-label="导航与筛选">
+    <nav class="navigation" aria-label="浏览方式">
+      <button class="nav-button" id="mapView" aria-pressed="true"><img class="icon" data-icon="share-2" alt="">关系图</button>
+      <button class="nav-button" id="timeView" aria-pressed="false"><img class="icon" data-icon="clock" alt="">时间线</button>
+    </nav>
+    <details id="filtersPanel" open><summary><img class="icon" data-icon="sliders" alt="">筛选<img class="icon chevron" data-icon="chevron-down" alt=""></summary>
+      <div class="filter-grid">
+        <div class="filter-field"><label for="domain">领域</label><select id="domain"><option value="">全部领域</option></select></div>
+        <div class="filter-field"><label for="kind">记录类型</label><select id="kind"><option value="">全部类型</option></select></div>
+        <div class="filter-field"><label for="status">状态</label><select id="status"><option value="">全部状态</option></select></div>
+        <div class="filter-field"><label for="relation">关系类型</label><select id="relation"><option value="">全部关系</option></select></div>
+      </div>
+    </details>
+    <details id="recordsPanel" open><summary><img class="icon" data-icon="list" alt="">记录与领域<span class="list-count" id="resultCount"></span><img class="icon chevron" data-icon="chevron-down" alt=""></summary><div id="results" class="results"></div></details>
+    <div class="sidebar-footer"><button id="reset"><img class="icon" data-icon="rotate-ccw" alt="">重置探索</button><p class="export-note">完整图与摘要 · 离线可浏览<br>正文链接需联网和仓库访问权限</p></div>
+  </aside>
+  <section class="stage" aria-label="交互关系图">
+    <canvas id="graph" tabindex="0" aria-label="关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。"></canvas>
+    <div class="canvas-toolbar"><div class="explore-tools"><button id="focus" class="tool-button" aria-pressed="false" title="只看选中节点的关联"><img class="icon" data-icon="crosshair" alt="">关联</button><button id="labels" class="tool-button" aria-pressed="false">标签</button></div><div class="zoom-group" role="group" aria-label="图谱缩放"><button id="zoomIn" aria-label="放大" title="放大"><img class="icon" data-icon="plus" alt=""></button><button id="zoomOut" aria-label="缩小" title="缩小"><img class="icon" data-icon="minus" alt=""></button><button id="fit" aria-label="图谱居中" title="居中"><img class="icon" data-icon="maximize-2" alt=""></button></div></div>
+    <div id="timeline" class="timeline" hidden></div>
+    <div class="caption" role="status" aria-live="polite"><strong id="visibleCount"></strong><p id="hint">点击探索 · 拖动调整 · 滚轮或双指缩放</p></div>
+  </section>
+  <aside id="detail" class="inspector idle" aria-label="记录详情"></aside>
+</main>
+<script id="atlas-data" type="application/json">__ATLAS_DATA__</script>
+<script id="atlas-icons" type="application/json">__ATLAS_ICONS__</script>
+<script id="atlas-license" type="text/plain">__ATLAS_LICENSE__</script>
+<script>
+'use strict';
+const data = JSON.parse(document.getElementById('atlas-data').textContent);
+const icons = JSON.parse(document.getElementById('atlas-icons').textContent);
+const $ = id => document.getElementById(id);
+const typeNames = {domain:'领域',person:'人物',organization:'机构',place:'地点',profile:'个人资料',topic:'主题',preference:'偏好',routine:'习惯',state:'状态',event:'事件',decision:'决策',goal:'目标',project:'项目',asset:'资产',source:'来源'};
+const relNames = {in_domain:'属于领域',about:'关于',part_of:'组成部分',participated_in:'参与',located_at:'位于',works_at:'任职',knows:'认识',supports:'支持',contradicts:'反证',supersedes:'替代',derived_from:'依据来源',depends_on:'依赖',related_to:'相关',extracted_as:'整理为'};
+const statusNames = {active:'当前',historical:'历史',disputed:'有争议',retracted:'已撤回'};
+const domainNames = {communication:'沟通',culture:'文化生活',devices:'设备与工具',education:'教育与学习',family:'家庭',finance:'财务',food:'饮食',health:'健康',identity:'身份认同',language:'语言',life:'生活',psychology:'心理',sport:'运动',technology:'技术',travel:'旅行',values:'价值观',work:'工作'};
+const paletteLight = ['#cd8583','#b8a357','#d79867','#7299aa','#c27983','#919d59','#5e999b','#ae80a2','#b69d60','#9d8abd','#75a28b','#ca916a','#7e9fcb','#c9829b','#a1a862','#7397ac','#89a17a'];
+const paletteDark = ['#df9b99','#cfba72','#e8af83','#97b9c9','#de9ba5','#b7c37f','#8cbec0','#cea6c3','#d3bd83','#baa8db','#9dc9b3','#e7b08a','#a3bfdf','#e3a1b8','#c1c995','#9abbcd','#b1c6a4'];
+const nodes = data.nodes.map(n => ({...n}));
+const byId = new Map(nodes.map(n => [n.id, n]));
+const domains = nodes.filter(n => n.type === 'domain').sort((a,b) => a.id.localeCompare(b.id));
+const domainIndex = new Map(domains.map((n,i) => [n.id, i]));
+const canvas = $('graph'), ctx = canvas.getContext('2d');
+let selected = null, focus = false, showLabels = false, view = 'map';
+let visible = [], links = [], zoom = 1, pan = {x:0,y:0}, width = 1, height = 1, drag = null, hover = null;
+let theme = document.documentElement.dataset.theme, themeMode = document.documentElement.dataset.themeMode;
+const themeMedia = matchMedia('(prefers-color-scheme: dark)');
+const pointers = new Map();
+let pinch = null;
+function el(tag, text, className) { const item = document.createElement(tag); if(text !== undefined) item.textContent = text; if(className) item.className = className; return item; }
+function icon(name) { const image = el('img', undefined, 'icon'); image.src = icons[name]; image.alt = ''; return image; }
+function loadIcons() { document.querySelectorAll('img[data-icon]').forEach(image => { image.src = icons[image.dataset.icon]; }); }
+function displayTitle(n) { return n.type === 'domain' ? (domainNames[n.id.slice(7)] || n.title) : n.title; }
+function color(n) { const id = n.type === 'domain' ? n.id : 'domain:' + (n.domains || [])[0]; return (theme === 'dark' ? paletteDark : paletteLight)[(domainIndex.get(id) || 0) % paletteLight.length]; }
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function option(select, value, text) { const item = el('option', text); item.value = value; select.append(item); }
+function dot(n) { const item = el('span', undefined, 'color-dot'); item.style.background = color(n); return item; }
+function applyTheme(mode, save = true) {
+  themeMode = mode;
+  theme = mode === 'system' ? (themeMedia.matches ? 'dark' : 'light') : mode;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.themeMode = mode;
+  document.querySelectorAll('[data-theme-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeMode === mode)));
+  if(save) { try { localStorage.setItem('personal-atlas.theme', mode); } catch (_) {} }
+  if(selected) renderDetail(byId.get(selected)); else renderIntro();
+  update();
+}
+document.querySelectorAll('[data-theme-mode]').forEach(button => button.onclick = () => applyTheme(button.dataset.themeMode));
+const systemChanged = () => { if(themeMode === 'system') applyTheme('system', false); };
+if(themeMedia.addEventListener) themeMedia.addEventListener('change', systemChanged); else themeMedia.addListener(systemChanged);
+domains.forEach(n => option($('domain'), n.id, displayTitle(n)));
+[...new Set(nodes.map(n=>n.type))].sort().forEach(t=>option($('kind'),t,typeNames[t]||t));
+[...new Set(nodes.map(n=>n.status).filter(Boolean))].sort().forEach(s=>option($('status'),s,statusNames[s]||s));
+[...new Set(data.edges.map(e=>e.type))].sort().forEach(r=>option($('relation'),r,relNames[r]||r));
+$('records').textContent = data.root.record_count;
+$('nodeCount').textContent = nodes.length;
+$('edges').textContent = data.edges.length;
+function layout() {
+  domains.forEach((n,i) => { const a = i / Math.max(1,domains.length) * Math.PI*2 - Math.PI/2; n.x = Math.cos(a)*350; n.y = Math.sin(a)*350; });
+  const counts = new Map();
+  nodes.filter(n=>n.type!=='domain').forEach(n=>{ const d=byId.get('domain:'+(n.domains||[])[0]);const k=counts.get(d?.id)||0;counts.set(d?.id,k+1);const a=k*2.399963;n.x=(d?.x||0)+Math.cos(a)*(22+Math.sqrt(k+1)*14);n.y=(d?.y||0)+Math.sin(a)*(22+Math.sqrt(k+1)*14); });
+  nodes.forEach(n=>{n.vx=0;n.vy=0;});
+  if(nodes.length>600) return;
+  for(let step=0;step<100;step++) {
+    for(let i=0;i<nodes.length;i++){const a=nodes[i];for(let j=i+1;j<nodes.length;j++){const b=nodes[j];const dx=a.x-b.x,dy=a.y-b.y,f=8/Math.max(36,dx*dx+dy*dy);a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f;}}
+    nodes.forEach(n=>{if(n.type==='domain'){n.vx=0;n.vy=0;return;}const d=byId.get('domain:'+(n.domains||[])[0]);n.vx+=((d?.x||0)-n.x)*.025;n.vy+=((d?.y||0)-n.y)*.025;n.vx*=.65;n.vy*=.65;n.x+=n.vx;n.y+=n.vy;});
+  }
+}
+function neighborIds(id) {
+  const ids = new Set([id]);
+  data.edges.filter(e=>!$('relation').value||e.type===$('relation').value).forEach(e=>{if(e.from===id)ids.add(e.to);if(e.to===id)ids.add(e.from);});
+  return ids;
+}
+function update() {
+  const q=$('search').value.trim().toLocaleLowerCase(),d=$('domain').value,k=$('kind').value,s=$('status').value,r=$('relation').value;
+  const neighbors=focus&&selected?neighborIds(selected):null;
+  visible=nodes.filter(n=>(!q||[displayTitle(n),n.title,n.id,n.summary,...(n.aliases||[])].join(' ').toLocaleLowerCase().includes(q))&&(!d||n.id===d||(n.domains||[]).includes(d.slice(7)))&&(!k||n.type===k)&&(!s||n.status===s)&&(!neighbors||neighbors.has(n.id)));
+  const ids=new Set(visible.map(n=>n.id));
+  links=data.edges.filter(e=>ids.has(e.from)&&ids.has(e.to)&&(!r||e.type===r));
+  $('visibleCount').textContent=visible.length+' / '+nodes.length+' 个节点 · '+links.length+' / '+data.edges.length+' 条关系';
+  $('resultCount').textContent='('+visible.length+')';
+  $('results').replaceChildren();
+  visible.slice().sort((a,b)=>displayTitle(a).localeCompare(displayTitle(b),'zh')).forEach(n=>{
+    const button=el('button',undefined,'result'+(selected===n.id?' selected':''));
+    button.setAttribute('aria-pressed',String(selected===n.id));
+    const copy=el('span',undefined,'result-copy');
+    copy.append(el('span',displayTitle(n),'result-title'),el('span',(typeNames[n.type]||n.type)+(n.status?' · '+(statusNames[n.status]||n.status):''),'result-meta'));
+    button.append(dot(n),copy);button.onclick=()=>select(n.id);$('results').append(button);
+  });
+  if(!visible.length)$('results').append(el('p','没有匹配的记录。','muted'));
+  renderTimeline();draw();
+}
+function provenance(target) {
+  const block=el('div',undefined,'provenance');
+  block.append(el('p','生成于 '+new Date(data.generated_at).toLocaleString()),el('p','固定快照 '+data.snapshot.slice(0,12)),el('p','完整图与摘要；正文通过远端链接查看。'),el('p','待整理来源：'+data.root.incomplete_sources));
+  target.append(block,el('p','此 HTML 含个人记录摘要。筛选改变显示范围，文件仍保留全部图数据。','notice'));
+}
+function renderIntro() {
+  const panel=$('detail');panel.classList.add('idle');panel.replaceChildren();
+  panel.append(el('div','探索你的记录','eyebrow intro-kicker'));
+  const mark=icon('compass');mark.classList.add('intro-mark');panel.append(mark);
+  panel.append(el('h2','从一个点，\n看见更多连接'),el('p','选择记录或领域，查看摘要与关联。你也可以用搜索和筛选，找到这张图里的一段经历。','description'));
+  const legend=el('div',undefined,'domain-legend');
+  domains.forEach(n=>{const button=el('button');button.append(dot(n),el('span',displayTitle(n)));button.onclick=()=>{$('domain').value=n.id;update();fit();select(n.id);};legend.append(button);});
+  panel.append(legend);provenance(panel);
+}
+function metaRow(target, name, label, value) { const row=el('div',undefined,'meta-row');row.append(icon(name),el('span',label,'meta-label'),el('span',value,'meta-value'));target.append(row); }
+function timeText(n) {const t=n.temporal||{};if(t.mode==='none')return '无时间信息';if(t.mode==='point')return t.at||'时间未知';return (t.start||'开始时间未知')+' → '+(t.end||'结束时间未记录');}
+function renderDetail(n) {
+  const panel=$('detail');panel.classList.remove('idle');panel.replaceChildren();
+  const top=el('div',undefined,'inspector-top'),close=el('button',undefined,'inspector-close');
+  close.setAttribute('aria-label','关闭详情');close.append(icon('x'));close.onclick=()=>{selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();};
+  top.append(dot(n),el('span',typeNames[n.type]||n.type),close);
+  panel.append(top,el('h2',displayTitle(n)),el('p',n.summary||'领域导航，连接属于这一领域的记录。','description'));
+  const meta=el('div',undefined,'meta-list');
+  if(n.domains?.length)metaRow(meta,'tag','领域',n.domains.map(d=>domainNames[d]||d).join('、'));
+  metaRow(meta,'file-text','类型',typeNames[n.type]||n.type);
+  if(n.status)metaRow(meta,'crosshair','状态',statusNames[n.status]||n.status);
+  if(n.temporal?.mode!=='none'&&n.temporal){metaRow(meta,'clock','时间',timeText(n));if(n.temporal.precision_note)metaRow(meta,'clock','精度',n.temporal.precision_note);}
+  panel.append(meta);
+  const rels=data.edges.filter(e=>(e.from===n.id||e.to===n.id)&&(!$('relation').value||e.type===$('relation').value));
+  const heading=el('div',undefined,'section-heading');heading.append(el('h3','关联记录'),el('span',rels.length+' 条关系'));panel.append(heading);
+  if(!rels.length)panel.append(el('p','当前关系筛选下没有关联。','muted'));
+  rels.forEach(e=>{
+    const outgoing=e.from===n.id,other=byId.get(outgoing?e.to:e.from),row=el('div',undefined,'related-row'),button=el('button',undefined,'related-button'),copy=el('span');
+    copy.append(el('span',displayTitle(other),'related-title'),el('div',(outgoing?'指向 · ':'来自 · ')+(relNames[e.type]||e.type),'related-meta'));
+    button.append(dot(other),copy);button.onclick=()=>select(other.id);row.append(button);
+    if(e.locator)row.append(el('div','来源定位：'+e.locator,'related-meta'));
+    if(e.claim)row.append(el('div','事实编号：'+e.claim,'related-meta'));panel.append(row);
+  });
+  if(n.url){const section=el('div',undefined,'section-heading');section.append(el('h3','正文与来源'));const link=el('a','查看远端完整记录','record-link');link.href=n.url;link.target='_blank';link.rel='noopener noreferrer';link.append(icon('arrow-up-right'));panel.append(section,link);}
+  panel.append(el('div',n.id,'record-id'));provenance(panel);
+}
+function select(id) { selected=id;renderDetail(byId.get(id));update(); }
+function renderTimeline() {
+  const list=$('timeline');list.replaceChildren(el('h2','经历的时间线','timeline-heading'));
+  const rank=new Map(data.timeline.map((id,i)=>[id,i]));
+  const timed=visible.filter(n=>n.temporal&&n.temporal.mode!=='none').sort((a,b)=>rank.get(a.id)-rank.get(b.id));
+  timed.forEach(n=>{const card=el('div',undefined,'timecard'),button=el('button',n.title);button.onclick=()=>select(n.id);card.append(el('small',timeText(n)),button,el('p',n.summary||''));list.append(card);});
+  if(!timed.length)list.append(el('p','当前范围没有带时间的记录。','muted'));
+}
+function fit() {
+  if(!visible.length||!width||!height)return;
+  const xs=visible.map(n=>n.x),ys=visible.map(n=>n.y),minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  zoom=Math.min(1.6,Math.max(.05,Math.min((width-130)/(maxx-minx+65),(height-180)/(maxy-miny+65))));
+  pan={x:-(maxx+minx)/2*zoom-12,y:-(maxy+miny)/2*zoom+5};draw();
+}
+function resize() {
+  const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
+  const changed=width!==rect.width||height!==rect.height;width=rect.width;height=rect.height;
+  canvas.width=width*devicePixelRatio;canvas.height=height*devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);if(changed)fit();else draw();
+}
+function draw() {
+  ctx.clearRect(0,0,width,height);ctx.save();ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom,zoom);
+  const near=selected?neighborIds(selected):null,accent=css('--focus'),label=css('--label'),background=css('--canvas');
+  links.forEach(e=>{
+    const a=byId.get(e.from),b=byId.get(e.to),active=e.from===selected||e.to===selected;
+    ctx.strokeStyle=active?accent:color(a);ctx.globalAlpha=active?.72:selected?.035:(e.type==='in_domain'?.3:.105);ctx.lineWidth=(active?1.5:.7)/zoom;
+    const dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy)||1;
+    const bend=Math.min(45,length*.065),cx=(a.x+b.x)/2-dy/length*bend,cy=(a.y+b.y)/2+dx/length*bend;
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,b.x,b.y);ctx.stroke();
+    if(active){const angle=Math.atan2(b.y-cy,b.x-cx),r=b.type==='domain'?13:5,x=b.x-Math.cos(angle)*(r+3/zoom),y=b.y-Math.sin(angle)*(r+3/zoom);ctx.fillStyle=accent;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-Math.cos(angle-.45)*6/zoom,y-Math.sin(angle-.45)*6/zoom);ctx.lineTo(x-Math.cos(angle+.45)*6/zoom,y-Math.sin(angle+.45)*6/zoom);ctx.fill();}
+  });
+  visible.forEach(n=>{
+    const r=n.type==='domain'?13:4.8,active=n.id===selected;
+    ctx.globalAlpha=near&&!near.has(n.id)?.22:1;ctx.fillStyle=color(n);ctx.beginPath();ctx.arc(n.x,n.y,r,0,Math.PI*2);ctx.fill();
+    if(n.status==='retracted'){ctx.strokeStyle=label;ctx.lineWidth=1/zoom;ctx.setLineDash([2/zoom,2/zoom]);ctx.stroke();ctx.setLineDash([]);}
+    if(active||n.id===hover){ctx.strokeStyle=accent;ctx.lineWidth=1.2/zoom;ctx.beginPath();ctx.arc(n.x,n.y,r+4/zoom,0,Math.PI*2);ctx.stroke();}
+    if(showLabels||n.type==='domain'||active||n.id===hover){ctx.font=(n.type==='domain'?'500 ':'')+12/zoom+'px -apple-system, sans-serif';const text=displayTitle(n),title=text.length>22?text.slice(0,22)+'…':text;ctx.lineWidth=4/zoom;ctx.strokeStyle=background;ctx.strokeText(title,n.x+r+7/zoom,n.y+4/zoom);ctx.fillStyle=label;ctx.fillText(title,n.x+r+7/zoom,n.y+4/zoom);}
+  });
+  ctx.restore();ctx.globalAlpha=1;
+}
+function world(e) {const rect=canvas.getBoundingClientRect();return{x:(e.clientX-rect.left-width/2-pan.x)/zoom,y:(e.clientY-rect.top-height/2-pan.y)/zoom};}
+function hit(p) {return visible.slice().reverse().find(n=>Math.hypot(n.x-p.x,n.y-p.y)<(n.type==='domain'?17:11)/Math.min(zoom,1));}
+function zoomAt(next, screenX=width/2, screenY=height/2) {const x=(screenX-width/2-pan.x)/zoom,y=(screenY-height/2-pan.y)/zoom;next=Math.max(.05,Math.min(6,next));pan.x+=x*(zoom-next);pan.y+=y*(zoom-next);zoom=next;draw();}
+function pinchState() {const values=[...pointers.values()];return{distance:Math.hypot(values[0].x-values[1].x,values[0].y-values[1].y),x:(values[0].x+values[1].x)/2,y:(values[0].y+values[1].y)/2};}
+canvas.onpointerdown=e=>{pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});canvas.setPointerCapture(e.pointerId);if(pointers.size===2){pinch=pinchState();drag=null;}else{drag={node:hit(world(e)),x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};}};
+canvas.onpointermove=e=>{
+  if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===2&&pinch){const next=pinchState(),rect=canvas.getBoundingClientRect();if(pinch.distance>0)zoomAt(zoom*next.distance/pinch.distance,pinch.x-rect.left,pinch.y-rect.top);pan.x+=next.x-pinch.x;pan.y+=next.y-pinch.y;pinch=next;draw();return;}
+  const p=world(e);
+  if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)>3)drag.moved=true;if(drag.node){drag.node.x=p.x;drag.node.y=p.y;}else{pan.x+=dx;pan.y+=dy;}drag.x=e.clientX;drag.y=e.clientY;}else{hover=hit(p)?.id||null;canvas.style.cursor=hover?'pointer':'grab';}draw();
+};
+function pointerEnd(e,cancelled=false){if(drag&&!drag.moved&&drag.node&&!cancelled)select(drag.node.id);pointers.delete(e.pointerId);drag=null;pinch=null;}
+canvas.onpointerup=e=>pointerEnd(e);canvas.onpointercancel=e=>pointerEnd(e,true);
+canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();zoomAt(zoom*Math.exp(-e.deltaY*.001),e.clientX-rect.left,e.clientY-rect.top);},{passive:false});
+canvas.ondblclick=fit;
+canvas.onkeydown=e=>{if(['+','=','-','0','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();if(e.key==='0')fit();else if(e.key==='+'||e.key==='=')zoomAt(zoom*1.25);else if(e.key==='-')zoomAt(zoom/1.25);else{pan.x+=e.key==='ArrowLeft'?30:e.key==='ArrowRight'?-30:0;pan.y+=e.key==='ArrowUp'?30:e.key==='ArrowDown'?-30:0;draw();}}};
+['search','domain','kind','status','relation'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',()=>{if(id==='relation'&&selected)renderDetail(byId.get(selected));update();}));
+$('focus').onclick=()=>{if(!selected){$('hint').textContent='先选择一个节点，再查看它的关联。';return;}focus=!focus;$('focus').setAttribute('aria-pressed',String(focus));update();fit();};
+$('labels').onclick=()=>{showLabels=!showLabels;$('labels').setAttribute('aria-pressed',String(showLabels));draw();};
+$('zoomIn').onclick=()=>zoomAt(zoom*1.25);$('zoomOut').onclick=()=>zoomAt(zoom/1.25);$('fit').onclick=fit;
+function switchView(next){view=next;$('timeline').hidden=next!=='time';canvas.hidden=next==='time';document.querySelector('.zoom-group').hidden=next==='time';$('labels').hidden=next==='time';$('mapView').setAttribute('aria-pressed',String(next==='map'));$('timeView').setAttribute('aria-pressed',String(next==='time'));$('hint').textContent=next==='time'?'现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定':'点击探索 · 拖动调整 · 滚轮或双指缩放';if(next==='map')resize();}
+$('mapView').onclick=()=>switchView('map');$('timeView').onclick=()=>switchView('time');
+$('reset').onclick=()=>{['search','domain','kind','status','relation'].forEach(id=>$(id).value='');focus=false;showLabels=false;selected=null;hover=null;$('focus').setAttribute('aria-pressed','false');$('labels').setAttribute('aria-pressed','false');layout();renderIntro();update();switchView('map');fit();};
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('search').focus();}if(e.key==='Escape'&&selected){selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();}});
+const narrow=matchMedia('(max-width: 760px)');
+function collapseForMobile(){if(narrow.matches){$('filtersPanel').open=false;$('recordsPanel').open=false;}else{$('filtersPanel').open=true;$('recordsPanel').open=true;}}
+collapseForMobile();if(narrow.addEventListener)narrow.addEventListener('change',collapseForMobile);
+loadIcons();layout();applyTheme(themeMode,false);new ResizeObserver(resize).observe(canvas);resize();fit();
+</script>
+</body>
+</html>

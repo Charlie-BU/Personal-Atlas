@@ -1,6 +1,6 @@
 # GitHub 远端存储与明文连接配置
 
-支持已授权 GitHub 连接器查询（无需 Python/PAT，见 connector.md），以及 Python 3.9+ 标准库通过 HTTPS PAT 调用 REST API 的完整读写通道。不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `~/.config/personal-atlas/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
+支持已授权 GitHub 连接器查询（无需 Python/PAT，见 connector.md），以及 Python 3.9+ 标准库通过 HTTPS PAT 调用 REST API 的完整读写通道。不需要 Git 命令。个人资料、原始材料、关系图、清单和操作历史只保存在用户指定的远端专用仓库。本地只保留 Skill 程序与 `~/.config/personal-atlas/config.json`；不创建 checkout、个人数据缓存、操作包文件、导入临时文件或离线队列。网络不可用时停止读写，不退回本地存储。用户明确请求可视化时，允许生成含完整图与摘要的独立 HTML 交付文件，见 visualization.md；这不是本地资料库或离线写入队列，不自动上传远端。运行中的数据可暂存在进程内存，进程退出后不由 Skill 保留。
 
 ## 配置与凭据
 
