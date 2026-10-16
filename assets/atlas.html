@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:,">
 <title>Personal Atlas · 个人信息罗盘</title>
 <script>
 // Only a theme preference is persisted. Storage may be unavailable for file URLs.
@@ -62,8 +63,14 @@ h1 { font: 600 27px/1.25 var(--serif); letter-spacing: 1px; margin: 0 0 4px; }
 .metric { text-align: center; }
 .metric strong { display: block; font: 500 23px/1.3 Georgia, serif; font-variant-numeric: tabular-nums; }
 .metric span { color: var(--muted); font-size: 11px; }
-.workspace { display: grid; grid-template-columns: 228px minmax(0, 1fr) 310px; height: calc(100dvh - 104px); min-height: 600px; }
-.sidebar { display: flex; flex-direction: column; overflow-y: auto; padding: 22px 18px; border-right: 1px solid var(--line); background: var(--panel); }
+.workspace { overflow: hidden; --left-width: 228px; --right-width: 310px; display: grid; grid-template-columns: var(--left-width) 6px minmax(0, 1fr) 6px var(--right-width); height: calc(100dvh - 104px); min-height: 600px; }
+.sidebar { container-type: inline-size; min-width: 0; overflow-x: hidden; display: flex; flex-direction: column; overflow-y: auto; padding: 22px 18px; border-right: 1px solid var(--line); background: var(--panel); }
+.sidebar, .inspector, .results { scrollbar-width: none; -ms-overflow-style: none; }
+.sidebar::-webkit-scrollbar, .inspector::-webkit-scrollbar, .results::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.splitter { position: relative; z-index: 3; cursor: col-resize; touch-action: none; background: var(--panel); outline-offset: -2px; }
+.splitter::after { content: ''; position: absolute; inset: 0 2px; background: var(--line); border-radius: 2px; transition: background-color .18s; }
+.splitter:hover::after, .splitter:focus-visible::after, .splitter.dragging::after { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; }
 .navigation { display: grid; gap: 5px; margin-bottom: 24px; }
 .nav-button { display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left; border-radius: 7px; font-weight: 500; border-left: 3px solid transparent; }
 .nav-button[aria-pressed="true"] { background: var(--selected); border-left-color: var(--accent); color: var(--accent); }
@@ -107,7 +114,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .timecard button { text-align: left; padding: 0; font-size: 16px; display: block; }
 .timecard small { color: var(--muted); font-size: 11px; }
 .timecard p { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 65ch; }
-.inspector { border-left: 1px solid var(--line); padding: 27px 25px; overflow-y: auto; background: var(--panel); }
+.inspector { min-width: 0; overflow-x: hidden; border-left: 1px solid var(--line); padding: 27px 25px; overflow-y: auto; background: var(--panel); }
 .inspector-top { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
 .inspector-close { margin-left: auto; padding: 4px; border-radius: 5px; display: flex; }
 .inspector h2 { font: 600 25px/1.5 var(--serif); letter-spacing: .4px; margin: 18px 0 13px; overflow-wrap: anywhere; }
@@ -137,15 +144,22 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .muted { color: var(--muted); }
 [hidden] { display: none !important; }
 @media (min-width: 761px) { body { height: 100dvh; display: flex; flex-direction: column; } .topbar { flex-shrink: 0; } .workspace { height: auto; flex: 1; min-height: 0; } }
-@media (max-width: 1200px) { .topbar { gap: 18px; padding: 17px 20px; } .subtitle { display: none; } .header-tools { gap: 14px; } .metrics { gap: 13px; padding-left: 15px; } .workspace { grid-template-columns: 210px minmax(0,1fr) 280px; } .inspector { padding: 24px 20px; } h1 { font-size: 23px; } }
-@media (max-width: 1000px) { .workspace { grid-template-columns: 210px minmax(0,1fr); } .inspector { position: fixed; top: 112px; right: 14px; bottom: 20px; width: 290px; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); z-index: 4; } .inspector.idle { display: none; } .metric strong { font-size: 20px; } .search-shortcut { display: none; } }
+@media (max-width: 1200px) { .topbar { gap: 18px; padding: 17px 20px; } .subtitle { display: none; } .header-tools { gap: 14px; } .metrics { gap: 13px; padding-left: 15px; }  .inspector { padding: 24px 20px; } h1 { font-size: 23px; } }
+@media (min-width: 761px) and (max-width: 1000px) {
+  .workspace { grid-template-columns: var(--left-width) 6px minmax(0,1fr); grid-template-rows: minmax(240px,1fr) auto; }
+  #rightSplitter { display: none; }
+  .inspector { grid-column: 1 / -1; max-height: 300px; border-left: 0; border-top: 1px solid var(--line); }
+  .inspector.idle { display: none; }
+  .metric strong { font-size: 20px; } .search-shortcut { display: none; }
+}
 @media (max-width: 760px) {
   .topbar { padding: 18px 18px 14px; gap: 16px; flex-wrap: wrap; min-height: 0; }
   .brand { gap: 10px; } .brand-icon { width: 36px; height: 36px; } .brand-icon .icon { width: 21px; height: 21px; }
   h1 { font-size: 21px; } .eyebrow { font-size: 8px; letter-spacing: 1.5px; }
   .header-tools { margin-left: auto; } .metrics { display: none; } .theme-switch button { padding: 5px 7px; height: 29px; }
   .search-box { order: 3; max-width: none; flex-basis: 100%; margin-left: 0; }
-  .workspace { height: auto; min-height: 0; display: flex; flex-direction: column; }
+  .splitter { display: none; }
+  .workspace { overflow: visible; height: auto; min-height: 0; display: flex; flex-direction: column; }
   .sidebar { padding: 12px 18px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .navigation { grid-template-columns: 1fr 1fr; margin: 0 0 8px; gap: 6px; }
   .nav-button { justify-content: center; padding: 8px 10px; border-left: 0; border-bottom: 2px solid transparent; }
@@ -160,7 +174,13 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   .inspector { position: relative; inset: auto; border-radius: 0; border: 0; border-top: 1px solid var(--line); box-shadow: none; width: auto; padding: 24px; }
   .inspector.idle { display: block; } .timeline { inset: 70px 24px 85px; }
 }
-@media (prefers-reduced-motion: no-preference) { button, a { transition: background-color .15s, color .15s; } }
+@container (max-width: 180px) { .filter-grid { grid-template-columns: 1fr; } summary { font-size: 12px; } }
+@media (prefers-reduced-motion: no-preference) {
+  button, a, select, .search-box { transition: background-color .18s, color .18s, border-color .18s; }
+  summary .chevron { transition: transform .2s ease; }
+  body, .sidebar, .inspector, .stage { transition: background-color .2s, color .2s; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
@@ -176,8 +196,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     <div class="metrics"><div class="metric"><strong id="records"></strong><span>记录</span></div><div class="metric"><strong id="nodeCount"></strong><span>节点</span></div><div class="metric"><strong id="edges"></strong><span>关系</span></div></div>
   </div>
 </header>
-<main class="workspace">
-  <aside class="sidebar" aria-label="导航与筛选">
+<main class="workspace" id="workspace">
+  <aside id="sidebar" class="sidebar" aria-label="导航与筛选">
     <nav class="navigation" aria-label="浏览方式">
       <button class="nav-button" id="mapView" aria-pressed="true"><img class="icon" data-icon="share-2" alt="">关系图</button>
       <button class="nav-button" id="timeView" aria-pressed="false"><img class="icon" data-icon="clock" alt="">时间线</button>
@@ -185,7 +205,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     <details id="filtersPanel" open><summary><img class="icon" data-icon="sliders" alt="">筛选<img class="icon chevron" data-icon="chevron-down" alt=""></summary>
       <div class="filter-grid">
         <div class="filter-field"><label for="domain">领域</label><select id="domain"><option value="">全部领域</option></select></div>
-        <div class="filter-field"><label for="kind">记录类型</label><select id="kind"><option value="">全部类型</option></select></div>
+        <div class="filter-field"><label for="kind">记录类型</label><select id="kind"><option value="">全部资料</option></select></div>
         <div class="filter-field"><label for="status">状态</label><select id="status"><option value="">全部状态</option></select></div>
         <div class="filter-field"><label for="relation">关系类型</label><select id="relation"><option value="">全部关系</option></select></div>
       </div>
@@ -193,12 +213,14 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     <details id="recordsPanel" open><summary><img class="icon" data-icon="list" alt="">记录与领域<span class="list-count" id="resultCount"></span><img class="icon chevron" data-icon="chevron-down" alt=""></summary><div id="results" class="results"></div></details>
     <div class="sidebar-footer"><button id="reset"><img class="icon" data-icon="rotate-ccw" alt="">重置探索</button><p class="export-note">完整图与摘要 · 离线可浏览<br>正文链接需联网和仓库访问权限</p></div>
   </aside>
+  <div id="leftSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整导航宽度" aria-controls="sidebar" title="拖动调整导航宽度；方向键微调"></div>
   <section class="stage" aria-label="交互关系图">
     <canvas id="graph" tabindex="0" aria-label="关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。"></canvas>
     <div class="canvas-toolbar"><div class="explore-tools"><button id="focus" class="tool-button" aria-pressed="false" title="只看选中节点的关联"><img class="icon" data-icon="crosshair" alt="">关联</button><button id="labels" class="tool-button" aria-pressed="false">标签</button></div><div class="zoom-group" role="group" aria-label="图谱缩放"><button id="zoomIn" aria-label="放大" title="放大"><img class="icon" data-icon="plus" alt=""></button><button id="zoomOut" aria-label="缩小" title="缩小"><img class="icon" data-icon="minus" alt=""></button><button id="fit" aria-label="图谱居中" title="居中"><img class="icon" data-icon="maximize-2" alt=""></button></div></div>
     <div id="timeline" class="timeline" hidden></div>
     <div class="caption" role="status" aria-live="polite"><strong id="visibleCount"></strong><p id="hint">点击探索 · 拖动调整 · 滚轮或双指缩放</p></div>
   </section>
+  <div id="rightSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整详情宽度" aria-controls="detail" title="拖动调整详情宽度；方向键微调"></div>
   <aside id="detail" class="inspector idle" aria-label="记录详情"></aside>
 </main>
 <script id="atlas-data" type="application/json">__ATLAS_DATA__</script>
@@ -226,6 +248,45 @@ let theme = document.documentElement.dataset.theme, themeMode = document.documen
 const themeMedia = matchMedia('(prefers-color-scheme: dark)');
 const pointers = new Map();
 let pinch = null;
+const motionMedia = matchMedia('(prefers-reduced-motion: reduce)');
+function reveal(element) {
+  if(motionMedia.matches || !element.animate) return;
+  element.getAnimations().forEach(animation => animation.cancel());
+  element.animate([{opacity:.45, transform:'translateY(3px)'},{opacity:1, transform:'translateY(0)'}], {duration:200,easing:'ease-out'});
+}
+let cameraFrame = null;
+function stopCamera() { if(cameraFrame !== null) cancelAnimationFrame(cameraFrame); cameraFrame=null; }
+function cameraTo(nextZoom,nextPan,animate=true) {
+  stopCamera();
+  if(!animate || motionMedia.matches) { zoom=nextZoom;pan=nextPan;draw();return; }
+  const startZoom=zoom,startPan={...pan},start=performance.now();
+  function frame(now) {
+    const progress=Math.min(1,(now-start)/230),t=1-Math.pow(1-progress,3);
+    zoom=startZoom+(nextZoom-startZoom)*t;pan={x:startPan.x+(nextPan.x-startPan.x)*t,y:startPan.y+(nextPan.y-startPan.y)*t};draw();
+    cameraFrame=progress<1?requestAnimationFrame(frame):null;
+  }
+  cameraFrame=requestAnimationFrame(frame);
+}
+let leftWidth=228,rightWidth=310;
+function panelLimits(side) {
+  const w=$('workspace').getBoundingClientRect().width,desktop=w>1000;
+  return {min:side==='left'?180:240,max:Math.max(side==='left'?180:240,Math.min(side==='left'?380:480,w-320-(desktop?(side==='left'?rightWidth:leftWidth)+12:6)))};
+}
+function panelWidth(side,value) {
+  const limit=panelLimits(side),next=Math.round(Math.max(limit.min,Math.min(limit.max,value)));
+  if(side==='left')leftWidth=next;else rightWidth=next;
+  $('workspace').style.setProperty('--'+side+'-width',next+'px');
+  const handle=$(side+'Splitter');handle.setAttribute('aria-valuemin',String(limit.min));handle.setAttribute('aria-valuemax',String(limit.max));handle.setAttribute('aria-valuenow',String(next));
+}
+function constrainPanels() { panelWidth('left',leftWidth);panelWidth('right',rightWidth); }
+['left','right'].forEach(side=>{
+  const handle=$(side+'Splitter');let start=null;
+  handle.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();stopCamera();start={id:e.pointerId,x:e.clientX,width:side==='left'?leftWidth:rightWidth};handle.setPointerCapture(e.pointerId);handle.classList.add('dragging');document.body.classList.add('resizing');};
+  handle.onpointermove=e=>{if(!start||start.id!==e.pointerId)return;panelWidth(side,start.width+(e.clientX-start.x)*(side==='left'?1:-1));};
+  const finish=()=>{start=null;handle.classList.remove('dragging');document.body.classList.remove('resizing');constrainPanels();};
+  handle.onpointerup=finish;handle.onpointercancel=finish;handle.onlostpointercapture=finish;
+  handle.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const limit=panelLimits(side),current=side==='left'?leftWidth:rightWidth;panelWidth(side,e.key==='Home'?limit.min:e.key==='End'?limit.max:current+(e.key==='ArrowRight'?1:-1)*(side==='left'?1:-1)*(e.shiftKey?40:16));constrainPanels();};
+});
 function el(tag, text, className) { const item = document.createElement(tag); if(text !== undefined) item.textContent = text; if(className) item.className = className; return item; }
 function icon(name) { const image = el('img', undefined, 'icon'); image.src = icons[name]; image.alt = ''; return image; }
 function loadIcons() { document.querySelectorAll('img[data-icon]').forEach(image => { image.src = icons[image.dataset.icon]; }); }
@@ -248,7 +309,8 @@ document.querySelectorAll('[data-theme-mode]').forEach(button => button.onclick 
 const systemChanged = () => { if(themeMode === 'system') applyTheme('system', false); };
 if(themeMedia.addEventListener) themeMedia.addEventListener('change', systemChanged); else themeMedia.addListener(systemChanged);
 domains.forEach(n => option($('domain'), n.id, displayTitle(n)));
-[...new Set(nodes.map(n=>n.type))].sort().forEach(t=>option($('kind'),t,typeNames[t]||t));
+[...new Set(nodes.map(n=>n.type))].filter(t=>t!=='source').sort().forEach(t=>option($('kind'),t,typeNames[t]||t));
+if(nodes.some(n=>n.type==='source'))option($('kind'),'source','来源');
 [...new Set(nodes.map(n=>n.status).filter(Boolean))].sort().forEach(s=>option($('status'),s,statusNames[s]||s));
 [...new Set(data.edges.map(e=>e.type))].sort().forEach(r=>option($('relation'),r,relNames[r]||r));
 $('records').textContent = data.root.record_count;
@@ -272,8 +334,10 @@ function neighborIds(id) {
 }
 function update() {
   const q=$('search').value.trim().toLocaleLowerCase(),d=$('domain').value,k=$('kind').value,s=$('status').value,r=$('relation').value;
+  const candidates=nodes.filter(n=>(!q||[displayTitle(n),n.title,n.id,n.summary,...(n.aliases||[])].join(' ').toLocaleLowerCase().includes(q))&&(!d||n.id===d||(n.domains||[]).includes(d.slice(7)))&&(k?n.type===k:n.type!=='source')&&(!s||n.status===s));
+  if(selected&&!candidates.some(n=>n.id===selected)){selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();}
   const neighbors=focus&&selected?neighborIds(selected):null;
-  visible=nodes.filter(n=>(!q||[displayTitle(n),n.title,n.id,n.summary,...(n.aliases||[])].join(' ').toLocaleLowerCase().includes(q))&&(!d||n.id===d||(n.domains||[]).includes(d.slice(7)))&&(!k||n.type===k)&&(!s||n.status===s)&&(!neighbors||neighbors.has(n.id)));
+  visible=candidates.filter(n=>!neighbors||neighbors.has(n.id));
   const ids=new Set(visible.map(n=>n.id));
   links=data.edges.filter(e=>ids.has(e.from)&&ids.has(e.to)&&(!r||e.type===r));
   $('visibleCount').textContent=visible.length+' / '+nodes.length+' 个节点 · '+links.length+' / '+data.edges.length+' 条关系';
@@ -301,7 +365,7 @@ function renderIntro() {
   panel.append(el('h2','从一个点，\n看见更多连接'),el('p','选择记录或领域，查看摘要与关联。你也可以用搜索和筛选，找到这张图里的一段经历。','description'));
   const legend=el('div',undefined,'domain-legend');
   domains.forEach(n=>{const button=el('button');button.append(dot(n),el('span',displayTitle(n)));button.onclick=()=>{$('domain').value=n.id;update();fit();select(n.id);};legend.append(button);});
-  panel.append(legend);provenance(panel);
+  panel.append(legend);provenance(panel);reveal(panel);
 }
 function metaRow(target, name, label, value) { const row=el('div',undefined,'meta-row');row.append(icon(name),el('span',label,'meta-label'),el('span',value,'meta-value'));target.append(row); }
 function timeText(n) {const t=n.temporal||{};if(t.mode==='none')return '无时间信息';if(t.mode==='point')return t.at||'时间未知';return (t.start||'开始时间未知')+' → '+(t.end||'结束时间未记录');}
@@ -328,9 +392,9 @@ function renderDetail(n) {
     if(e.claim)row.append(el('div','事实编号：'+e.claim,'related-meta'));panel.append(row);
   });
   if(n.url){const section=el('div',undefined,'section-heading');section.append(el('h3','正文与来源'));const link=el('a','查看远端完整记录','record-link');link.href=n.url;link.target='_blank';link.rel='noopener noreferrer';link.append(icon('arrow-up-right'));panel.append(section,link);}
-  panel.append(el('div',n.id,'record-id'));provenance(panel);
+  panel.append(el('div',n.id,'record-id'));provenance(panel);panel.scrollTop=0;reveal(panel);
 }
-function select(id) { selected=id;renderDetail(byId.get(id));update(); }
+function select(id) { const node=byId.get(id);if(!node)return;if(node.type==='source')$('kind').value='source';else if($('kind').value&&$('kind').value!==node.type)$('kind').value='';if($('domain').value&&node.id!==$('domain').value&&!(node.domains||[]).includes($('domain').value.slice(7)))$('domain').value='';if($('status').value&&$('status').value!==node.status)$('status').value='';selected=id;renderDetail(node);update();reveal(canvas); }
 function renderTimeline() {
   const list=$('timeline');list.replaceChildren(el('h2','经历的时间线','timeline-heading'));
   const rank=new Map(data.timeline.map((id,i)=>[id,i]));
@@ -338,17 +402,17 @@ function renderTimeline() {
   timed.forEach(n=>{const card=el('div',undefined,'timecard'),button=el('button',n.title);button.onclick=()=>select(n.id);card.append(el('small',timeText(n)),button,el('p',n.summary||''));list.append(card);});
   if(!timed.length)list.append(el('p','当前范围没有带时间的记录。','muted'));
 }
-function fit() {
+function fit(animate=true) {
   if(!visible.length||!width||!height)return;
   const xs=visible.map(n=>n.x),ys=visible.map(n=>n.y),minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
-  zoom=Math.min(1.6,Math.max(.05,Math.min((width-130)/(maxx-minx+65),(height-180)/(maxy-miny+65))));
-  pan={x:-(maxx+minx)/2*zoom-12,y:-(maxy+miny)/2*zoom+5};draw();
+  const nextZoom=Math.min(1.6,Math.max(.05,Math.min((width-130)/(maxx-minx+65),(height-180)/(maxy-miny+65))));
+  cameraTo(nextZoom,{x:-(maxx+minx)/2*nextZoom-12,y:-(maxy+miny)/2*nextZoom+5},animate);
 }
 function resize() {
   const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
   const changed=width!==rect.width||height!==rect.height;width=rect.width;height=rect.height;
   canvas.width=width*devicePixelRatio;canvas.height=height*devicePixelRatio;
-  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);if(changed)fit();else draw();
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);if(changed)fit(false);else draw();
 }
 function draw() {
   ctx.clearRect(0,0,width,height);ctx.save();ctx.translate(width/2+pan.x,height/2+pan.y);ctx.scale(zoom,zoom);
@@ -372,9 +436,9 @@ function draw() {
 }
 function world(e) {const rect=canvas.getBoundingClientRect();return{x:(e.clientX-rect.left-width/2-pan.x)/zoom,y:(e.clientY-rect.top-height/2-pan.y)/zoom};}
 function hit(p) {return visible.slice().reverse().find(n=>Math.hypot(n.x-p.x,n.y-p.y)<(n.type==='domain'?17:11)/Math.min(zoom,1));}
-function zoomAt(next, screenX=width/2, screenY=height/2) {const x=(screenX-width/2-pan.x)/zoom,y=(screenY-height/2-pan.y)/zoom;next=Math.max(.05,Math.min(6,next));pan.x+=x*(zoom-next);pan.y+=y*(zoom-next);zoom=next;draw();}
+function zoomAt(next, screenX=width/2, screenY=height/2, animate=false) {stopCamera();const x=(screenX-width/2-pan.x)/zoom,y=(screenY-height/2-pan.y)/zoom;next=Math.max(.05,Math.min(6,next));cameraTo(next,{x:pan.x+x*(zoom-next),y:pan.y+y*(zoom-next)},animate);}
 function pinchState() {const values=[...pointers.values()];return{distance:Math.hypot(values[0].x-values[1].x,values[0].y-values[1].y),x:(values[0].x+values[1].x)/2,y:(values[0].y+values[1].y)/2};}
-canvas.onpointerdown=e=>{pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});canvas.setPointerCapture(e.pointerId);if(pointers.size===2){pinch=pinchState();drag=null;}else{drag={node:hit(world(e)),x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};}};
+canvas.onpointerdown=e=>{stopCamera();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});canvas.setPointerCapture(e.pointerId);if(pointers.size===2){pinch=pinchState();drag=null;}else{drag={node:hit(world(e)),x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};}};
 canvas.onpointermove=e=>{
   if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pointers.size===2&&pinch){const next=pinchState(),rect=canvas.getBoundingClientRect();if(pinch.distance>0)zoomAt(zoom*next.distance/pinch.distance,pinch.x-rect.left,pinch.y-rect.top);pan.x+=next.x-pinch.x;pan.y+=next.y-pinch.y;pinch=next;draw();return;}
@@ -386,18 +450,29 @@ canvas.onpointerup=e=>pointerEnd(e);canvas.onpointercancel=e=>pointerEnd(e,true)
 canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();zoomAt(zoom*Math.exp(-e.deltaY*.001),e.clientX-rect.left,e.clientY-rect.top);},{passive:false});
 canvas.ondblclick=fit;
 canvas.onkeydown=e=>{if(['+','=','-','0','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();if(e.key==='0')fit();else if(e.key==='+'||e.key==='=')zoomAt(zoom*1.25);else if(e.key==='-')zoomAt(zoom/1.25);else{pan.x+=e.key==='ArrowLeft'?30:e.key==='ArrowRight'?-30:0;pan.y+=e.key==='ArrowUp'?30:e.key==='ArrowDown'?-30:0;draw();}}};
-['search','domain','kind','status','relation'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',()=>{if(id==='relation'&&selected)renderDetail(byId.get(selected));update();}));
+['search','domain','kind','status','relation'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',()=>{if(id==='relation'&&selected)renderDetail(byId.get(selected));update();reveal(canvas);reveal($('results'));}));
 $('focus').onclick=()=>{if(!selected){$('hint').textContent='先选择一个节点，再查看它的关联。';return;}focus=!focus;$('focus').setAttribute('aria-pressed',String(focus));update();fit();};
-$('labels').onclick=()=>{showLabels=!showLabels;$('labels').setAttribute('aria-pressed',String(showLabels));draw();};
-$('zoomIn').onclick=()=>zoomAt(zoom*1.25);$('zoomOut').onclick=()=>zoomAt(zoom/1.25);$('fit').onclick=fit;
-function switchView(next){view=next;$('timeline').hidden=next!=='time';canvas.hidden=next==='time';document.querySelector('.zoom-group').hidden=next==='time';$('labels').hidden=next==='time';$('mapView').setAttribute('aria-pressed',String(next==='map'));$('timeView').setAttribute('aria-pressed',String(next==='time'));$('hint').textContent=next==='time'?'现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定':'点击探索 · 拖动调整 · 滚轮或双指缩放';if(next==='map')resize();}
+$('labels').onclick=()=>{showLabels=!showLabels;$('labels').setAttribute('aria-pressed',String(showLabels));draw();reveal(canvas);};
+$('zoomIn').onclick=()=>zoomAt(zoom*1.25,width/2,height/2,true);$('zoomOut').onclick=()=>zoomAt(zoom/1.25,width/2,height/2,true);$('fit').onclick=fit;
+function switchView(next){view=next;$('timeline').hidden=next!=='time';canvas.hidden=next==='time';document.querySelector('.zoom-group').hidden=next==='time';$('labels').hidden=next==='time';$('mapView').setAttribute('aria-pressed',String(next==='map'));$('timeView').setAttribute('aria-pressed',String(next==='time'));$('hint').textContent=next==='time'?'现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定':'点击探索 · 拖动调整 · 滚轮或双指缩放';if(next==='map')resize();reveal(next==='map'?canvas:$('timeline'));}
 $('mapView').onclick=()=>switchView('map');$('timeView').onclick=()=>switchView('time');
-$('reset').onclick=()=>{['search','domain','kind','status','relation'].forEach(id=>$(id).value='');focus=false;showLabels=false;selected=null;hover=null;$('focus').setAttribute('aria-pressed','false');$('labels').setAttribute('aria-pressed','false');layout();renderIntro();update();switchView('map');fit();};
+$('reset').onclick=()=>{['search','domain','kind','status','relation'].forEach(id=>$(id).value='');focus=false;showLabels=false;selected=null;hover=null;$('focus').setAttribute('aria-pressed','false');$('labels').setAttribute('aria-pressed','false');layout();renderIntro();update();switchView('map');fit();reveal(canvas);};
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('search').focus();}if(e.key==='Escape'&&selected){selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();}});
 const narrow=matchMedia('(max-width: 760px)');
 function collapseForMobile(){if(narrow.matches){$('filtersPanel').open=false;$('recordsPanel').open=false;}else{$('filtersPanel').open=true;$('recordsPanel').open=true;}}
+['filtersPanel','recordsPanel'].forEach(id=>{
+  const panel=$(id),summary=panel.querySelector('summary');let animation=null;
+  summary.addEventListener('click',e=>{
+    if(motionMedia.matches||!panel.animate)return;
+    e.preventDefault();const start=panel.getBoundingClientRect().height,wasClosing=panel.dataset.closing==='true',opening=wasClosing||!panel.open;
+    if(animation)animation.cancel();panel.style.height='';panel.open=true;panel.dataset.closing=String(!opening);
+    const end=opening?panel.scrollHeight:summary.getBoundingClientRect().height+parseFloat(getComputedStyle(panel).paddingTop)+parseFloat(getComputedStyle(panel).paddingBottom)+1;
+    panel.style.overflow='hidden';animation=panel.animate([{height:start+'px'},{height:end+'px'}],{duration:210,easing:'ease-in-out'});
+    animation.onfinish=()=>{panel.open=opening;panel.style.overflow='';panel.dataset.closing='false';animation=null;};
+  });
+});
 collapseForMobile();if(narrow.addEventListener)narrow.addEventListener('change',collapseForMobile);
-loadIcons();layout();applyTheme(themeMode,false);new ResizeObserver(resize).observe(canvas);resize();fit();
+loadIcons();layout();applyTheme(themeMode,false);new ResizeObserver(resize).observe(canvas);new ResizeObserver(constrainPanels).observe($('workspace'));constrainPanels();resize();fit(false);
 </script>
 </body>
 </html>
