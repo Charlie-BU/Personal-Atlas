@@ -63,7 +63,7 @@ ui.elements.get('reset').onclick();assert.equal(ui.run('visible.length'),without
 ui.elements.get('domain').value=data.root.domains[0];ui.elements.get('domain').dispatch('change');assert.ok(ui.run('visible.length')<data.nodes.length);
 ui.elements.get('reset').onclick();const id=data.nodes.find(n=>n.type!=='domain'&&n.type!=='source').id;ui.run('select('+JSON.stringify(id)+')');assert.equal(ui.run('selected'),id);assert.ok(ui.elements.get('detail').children.length>5);
 ui.elements.get('focus').onclick();assert.equal(ui.elements.get('focus').getAttribute('aria-pressed'),'true');assert.ok(ui.run('visible.length')<=data.nodes.length);
-ui.elements.get('timeView').onclick();assert.equal(ui.elements.get('timeline').hidden,false);assert.equal(ui.elements.get('graph').hidden,true);
+ui.elements.get('timeView').onclick();assert.equal(ui.elements.get('reset').hidden,false);assert.equal(ui.elements.get('zoomIn').hidden,true);assert.equal(ui.elements.get('timeline').hidden,false);assert.equal(ui.elements.get('graph').hidden,true);
 ui.elements.get('mapView').onclick();const before=ui.run('zoom');ui.elements.get('zoomIn').onclick();assert.ok(ui.run('zoom')>before);ui.elements.get('zoomOut').onclick();assert.ok(Math.abs(ui.run('zoom')-before)<1e-10);
 ui.elements.get('reset').onclick();assert.equal(ui.run('selected'),null);assert.equal(ui.run('view'),'map');assert.equal(ui.run('focus'),false);
 const mobile=boot({narrow:true});assert.equal(mobile.elements.get('filtersPanel').open,false);assert.equal(mobile.elements.get('recordsPanel').open,false);
