@@ -22,22 +22,31 @@ class Element {
   setPointerCapture() {}
   getBoundingClientRect() { return {x:0,y:0,left:0,top:0,width:880,height:800}; }
 }
-function boot({blocked=false,saved=null,systemDark=false,narrow=false}={}) {
+function boot({blocked=false,saved=null,savedLanguage=null,systemDark=false,narrow=false}={}) {
   const elements=new Map();
   for(const match of html.matchAll(/\bid="([^"]+)"/g))elements.set(match[1],new Element());
   elements.get('atlas-data').textContent=dataCode;elements.get('atlas-icons').textContent=iconCode;
   const themeButtons=['themeLight','themeDark','themeSystem'].map((id,i)=>{const e=elements.get(id);e.dataset.themeMode=['light','dark','system'][i];return e;});
   const images=[...html.matchAll(/data-icon="([^"]+)"/g)].map(m=>{const e=new Element('img');e.dataset.icon=m[1];return e;});
+  const localized=[];
+  for(const match of html.matchAll(/<[^>]+\bdata-i18n(?:-[a-z-]+)?="[^"]+"[^>]*>/g)) {
+    const attrs=[...match[0].matchAll(/([\w-]+)="([^"]*)"/g)];
+    const id=attrs.find(a=>a[1]==='id')?.[2];
+    const item=id?elements.get(id):new Element();
+    for(const [,key,value] of attrs) {item.attrs[key]=value;if(key==='data-i18n')item.dataset.i18n=value;}
+    localized.push(item);
+  }
   const root=new Element(),zoomGroup=new Element();
   const medias=new Map();
   const storage=new Map(saved?[['personal-atlas.theme',saved]]:[]);
+  if(savedLanguage)storage.set('personal-atlas.language',savedLanguage);
   const ctx=new Proxy({}, {get:(target,name)=>name in target?target[name]:()=>{},set:(target,name,value)=>(target[name]=value,true)});
   elements.get('graph').getContext=()=>ctx;
-  const document={body:new Element(),documentElement:root,getElementById:id=>elements.get(id),createElement:tag=>new Element(tag),querySelectorAll:selector=>selector==='[data-theme-mode]'?themeButtons:selector==='img[data-icon]'?images:[],querySelector:selector=>selector==='.zoom-group'?zoomGroup:null,addEventListener:()=>{}};
+  const document={body:new Element(),documentElement:root,getElementById:id=>elements.get(id),createElement:tag=>new Element(tag),querySelectorAll:selector=>selector==='[data-theme-mode]'?themeButtons:selector==='img[data-icon]'?images:selector.startsWith('[data-i18n')?localized.filter(item=>Object.hasOwn(item.attrs,selector.slice(1,-1))):[],querySelector:selector=>selector==='.zoom-group'?zoomGroup:null,addEventListener:()=>{}};
   const sandbox={document,localStorage:{getItem:k=>{if(blocked)throw Error('blocked');return storage.get(k)||null;},setItem:(k,v)=>{if(blocked)throw Error('blocked');storage.set(k,v);}},matchMedia:q=>{if(!medias.has(q))medias.set(q,{matches:q.includes('reduced-motion')?true:q.includes('color-scheme')?systemDark:narrow,addEventListener(name,fn){this.callback=fn;},addListener(fn){this.callback=fn;}});return medias.get(q);},devicePixelRatio:1,ResizeObserver:class{constructor(cb){this.cb=cb;}observe(){this.cb();}},getComputedStyle:()=>({getPropertyValue:n=>({'--focus':root.dataset.theme==='dark'?'#c3d8b0':'#48643f','--label':'#38413e','--canvas':'#fdfcf9'}[n]||'')}),console};
   const context=vm.createContext(sandbox);
   executable.forEach(s=>vm.runInContext(s.code,context));
-  return {context,elements,root,storage,medias,images,run:code=>vm.runInContext(code,context)};
+  return {context,elements,root,storage,medias,images,localized,run:code=>vm.runInContext(code,context)};
 }
 const ui=boot();
 assert.equal(ui.root.dataset.theme,'light');assert.equal(ui.root.dataset.themeMode,'system');
@@ -71,3 +80,42 @@ assert.deepEqual(JSON.parse(ui.run('JSON.stringify(data.nodes.map(n=>n.id))')),d
 ui.run("panelWidth('left',9999)");assert.equal(ui.run('leftWidth'),ui.run("panelLimits('left').max"));ui.run("panelWidth('left',0)");assert.equal(ui.run('leftWidth'),180);
 ui.run("panelWidth('right',9999)");assert.equal(ui.run('rightWidth'),ui.run("panelLimits('right').max"));ui.run("panelWidth('right',0)");assert.equal(ui.run('rightWidth'),240);
 console.log('Source defaults, explicit source/all filters, panel limits, theme, storage-disabled fallback, system updates, fresh UI data, search, filters, details, focus, timeline, zoom and reset contracts passed. Visual rendering not tested.');
+
+// Language changes translate interface chrome while preserving record data and exploration state.
+const bilingual=boot();
+assert.equal(bilingual.root.lang,'zh-CN');
+assert.equal(bilingual.storage.has('personal-atlas.language'),false);
+assert.equal(bilingual.elements.get('languageToggle').textContent,'EN');
+bilingual.run('select('+JSON.stringify(id)+')');
+bilingual.elements.get('timeView').onclick();
+const originalData=JSON.stringify(bilingual.run('data'));
+bilingual.elements.get('languageToggle').onclick();
+assert.equal(bilingual.root.lang,'en');
+for(const item of bilingual.localized) {
+  if(item.dataset.i18n)assert.equal(item.textContent,bilingual.run('english['+JSON.stringify(item.dataset.i18n)+']'));
+  for(const attr of ['aria-label','title','placeholder']) {
+    const original=item.attrs['data-i18n-'+attr];
+    if(original)assert.equal(item.attrs[attr],bilingual.run('english['+JSON.stringify(original)+']'));
+  }
+}
+assert.equal(bilingual.storage.get('personal-atlas.language'),'en');
+assert.equal(bilingual.run('selected'),id);assert.equal(bilingual.run('view'),'time');
+assert.equal(bilingual.elements.get('languageToggle').textContent,'中文');
+assert.equal(bilingual.elements.get('timeline').children[0].textContent,'Life timeline');
+assert.ok(bilingual.elements.get('visibleCount').textContent.includes('nodes'));
+assert.equal(bilingual.run('typeNames.source'),'Source');
+assert.equal(bilingual.elements.get('detail').children[1].textContent,data.nodes.find(n=>n.id===id).title);
+assert.equal(JSON.stringify(bilingual.run('data')),originalData);
+bilingual.elements.get('kind').value='source';bilingual.elements.get('kind').dispatch('change');
+bilingual.elements.get('languageToggle').onclick();
+assert.equal(bilingual.elements.get('kind').value,'source');
+assert.equal(bilingual.run("visible.every(n=>n.type==='source')"),true);
+assert.equal(bilingual.root.lang,'zh-CN');
+assert.equal(boot({savedLanguage:'en'}).root.lang,'en');
+assert.equal(boot({savedLanguage:'invalid'}).root.lang,'zh-CN');
+const noStorage=boot({blocked:true});noStorage.elements.get('languageToggle').onclick();
+assert.equal(noStorage.root.lang,'en');assert.equal(noStorage.storage.size,0);
+assert.equal(noStorage.run("timeText({temporal:{mode:'point',at:null}})"),'Date unknown');
+assert.equal(noStorage.run("timeText({temporal:{mode:'interval',start:null,end:null}})"),'Start date unknown → End date not recorded');
+assert.ok(html.indexOf('id="languageToggle"')>html.indexOf('id="themeSystem"'));
+console.log('Chinese default, language persistence and fallback, translated metadata, unchanged records, selection, filters and timeline state passed.');

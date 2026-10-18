@@ -10,11 +10,12 @@ Markdown holds the details and original sources; a JSON graph connects them.
 Your data lives in a Git repository you control, accessed through your agent's
 existing tools.
 
-![Personal Atlas graph in light mode — fictional demonstration](docs/images/atlas-light.png)
+![Personal Atlas graph in light mode — fictional demonstration](docs/images/atlas-en-light.png)
 
-*Actual exported interface, using entirely fictional records. The current skill
-instructions and visualization interface are primarily in Chinese; this project
-provides English and Chinese documentation.*
+*Actual exported interface, using entirely fictional records. The visualization template supports Chinese and English. Use the language toggle
+to the right of the theme controls; Chinese is the default and the choice is
+saved locally. Record content stays in its original language. Skill instructions
+are primarily in Chinese; project documentation is available in both languages.*
 
 ## What you can do
 
@@ -29,14 +30,37 @@ provides English and Chinese documentation.*
 - **Own portable files.** No dedicated hosted Atlas service or vector database
   is required. Git provides version history and a format you can inspect.
 
-<details>
-<summary>Dark mode and timeline</summary>
+## See it in action
 
-![Personal Atlas in dark mode — fictional demonstration](docs/images/atlas-dark.png)
+The fictional demo includes **56 personal records and one source**, organized
+across **17 domains, 74 graph nodes and 227 relationships**. It connects projects,
+collaborators, learning, family routines, creative work, travel, decisions, and goals.
+All screenshots below use the English interface; record content remains in its
+original language.
 
-![Personal Atlas timeline — fictional demonstration](docs/images/atlas-timeline.png)
+### Follow connections in dark mode
 
-</details>
+Select a project and focus its neighbors to explore collaborators, milestones,
+related decisions, and source links. The inspector keeps summaries and relationship
+labels beside the graph.
+
+![English dark mode with a selected project and related records](docs/images/atlas-en-dark.png)
+
+### Search and filter without losing context
+
+Search original record text and combine domain, type, status, and relationship
+filters. Counts distinguish the visible subset from the complete embedded graph.
+
+![English search and filters with original Chinese records](docs/images/atlas-en-filter.png)
+
+### Browse experiences and plans over time
+
+Switch to the timeline to review dated events, decisions, projects, and goals.
+Dates keep their recorded precision; changing the interface language does not
+translate your records.
+
+![English timeline with dated fictional records](docs/images/atlas-en-timeline.png)
+
 
 ## Get started
 

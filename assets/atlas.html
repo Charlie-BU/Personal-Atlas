@@ -7,7 +7,7 @@
 <link rel="icon" href="data:,">
 <title>Personal Atlas · 个人信息罗盘</title>
 <script>
-// Only a theme preference is persisted. Storage may be unavailable for file URLs.
+// Only display preferences are persisted. Storage may be unavailable for file URLs.
 (function () {
   let mode = 'system';
   try { mode = localStorage.getItem('personal-atlas.theme') || mode; } catch (_) {}
@@ -15,6 +15,11 @@
   const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.dataset.themeMode = mode;
+  let language = 'zh-CN';
+  try { language = localStorage.getItem('personal-atlas.language') || language; } catch (_) {}
+  if (!['zh-CN', 'en'].includes(language)) language = 'zh-CN';
+  document.documentElement.dataset.language = language;
+  document.documentElement.lang = language;
 })();
 </script>
 <style>
@@ -54,6 +59,10 @@ h1 { font: 600 27px/1.25 var(--serif); letter-spacing: 1px; margin: 0 0 4px; }
 .search-box:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .search-box input::placeholder { color: var(--muted); }
 .search-shortcut { border: 1px solid var(--line); border-radius: 4px; font-size: 10px; padding: 0 4px; white-space: nowrap; color: var(--muted); }
+.appearance-tools { display: flex; align-items: center; gap: 8px; }
+.language-toggle { flex-shrink: 0; min-width: 44px; height: 40px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 22px; background: var(--control); font-size: 11px; }
+:root[lang="en"] .meta-row .meta-label { width: 62px; }
+@media (min-width: 761px) { :root[lang="en"] .filter-grid { grid-template-columns: 1fr; } }
 .header-tools { display: flex; align-items: center; gap: 24px; }
 .theme-switch { display: flex; background: var(--control); border-radius: 22px; padding: 3px; gap: 2px; border: 1px solid var(--line); }
 .theme-switch button { border-radius: 20px; padding: 7px 9px; height: 34px; display: grid; place-items: center; font-size: 11px; }
@@ -183,43 +192,44 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="brand-icon"><img class="icon" data-icon="compass" alt=""></span><div><div class="eyebrow">Personal Atlas</div><h1>个人信息罗盘</h1></div></div>
-  <label class="search-box"><img class="icon" data-icon="search" alt=""><input id="search" type="search" aria-label="搜索记录、摘要或别名" placeholder="搜索记录、摘要或别名…"><span class="search-shortcut" aria-hidden="true">⌘ K</span></label>
+  <div class="brand"><span class="brand-icon"><img class="icon" data-icon="compass" alt=""></span><div><div class="eyebrow">Personal Atlas</div><h1 data-i18n="个人信息罗盘">个人信息罗盘</h1></div></div>
+  <label class="search-box"><img class="icon" data-icon="search" alt=""><input id="search" type="search" aria-label="搜索记录、摘要或别名" data-i18n-aria-label="搜索记录、摘要或别名" placeholder="搜索记录、摘要或别名…" data-i18n-placeholder="搜索记录、摘要或别名…"><span class="search-shortcut" aria-hidden="true">⌘ K</span></label>
   <div class="header-tools">
-    <div class="theme-switch" role="group" aria-label="页面主题">
-      <button id="themeLight" data-theme-mode="light" aria-label="浅色主题" title="浅色主题" aria-pressed="false"><img class="icon" data-icon="sun" alt=""></button>
-      <button id="themeDark" data-theme-mode="dark" aria-label="深色主题" title="深色主题" aria-pressed="false"><img class="icon" data-icon="moon" alt=""></button>
-      <button id="themeSystem" data-theme-mode="system" aria-label="跟随系统" title="跟随系统" aria-pressed="true">自动</button>
+    <div class="appearance-tools"><div class="theme-switch" role="group" aria-label="页面主题" data-i18n-aria-label="页面主题">
+      <button id="themeLight" data-theme-mode="light" aria-label="浅色主题" data-i18n-aria-label="浅色主题" title="浅色主题" data-i18n-title="浅色主题" aria-pressed="false"><img class="icon" data-icon="sun" alt=""></button>
+      <button id="themeDark" data-theme-mode="dark" aria-label="深色主题" data-i18n-aria-label="深色主题" title="深色主题" data-i18n-title="深色主题" aria-pressed="false"><img class="icon" data-icon="moon" alt=""></button>
+      <button id="themeSystem" data-theme-mode="system" aria-label="跟随系统" data-i18n-aria-label="跟随系统" title="跟随系统" data-i18n-title="跟随系统" aria-pressed="true"><span data-i18n="自动">自动</span></button>
     </div>
-    <div class="metrics"><div class="metric"><strong id="records"></strong><span>记录</span></div><div class="metric"><strong id="nodeCount"></strong><span>节点</span></div><div class="metric"><strong id="edges"></strong><span>关系</span></div></div>
+    <button id="languageToggle" class="language-toggle" type="button" aria-label="切换为英文" title="切换为英文" aria-pressed="false">EN</button></div>
+    <div class="metrics"><div class="metric"><strong id="records"></strong><span data-i18n="记录">记录</span></div><div class="metric"><strong id="nodeCount"></strong><span data-i18n="节点">节点</span></div><div class="metric"><strong id="edges"></strong><span data-i18n="关系">关系</span></div></div>
   </div>
 </header>
 <main class="workspace" id="workspace">
-  <aside id="sidebar" class="sidebar" aria-label="导航与筛选">
-    <nav class="navigation" aria-label="浏览方式">
-      <button class="nav-button" id="mapView" aria-pressed="true"><img class="icon" data-icon="share-2" alt="">关系图</button>
-      <button class="nav-button" id="timeView" aria-pressed="false"><img class="icon" data-icon="clock" alt="">时间线</button>
+  <aside id="sidebar" class="sidebar" aria-label="导航与筛选" data-i18n-aria-label="导航与筛选">
+    <nav class="navigation" aria-label="浏览方式" data-i18n-aria-label="浏览方式">
+      <button class="nav-button" id="mapView" aria-pressed="true"><img class="icon" data-icon="share-2" alt=""><span data-i18n="关系图">关系图</span></button>
+      <button class="nav-button" id="timeView" aria-pressed="false"><img class="icon" data-icon="clock" alt=""><span data-i18n="时间线">时间线</span></button>
     </nav>
-    <details id="filtersPanel" open><summary><img class="icon" data-icon="sliders" alt="">筛选<img class="icon chevron" data-icon="chevron-down" alt=""></summary>
+    <details id="filtersPanel" open><summary><img class="icon" data-icon="sliders" alt=""><span data-i18n="筛选">筛选</span><img class="icon chevron" data-icon="chevron-down" alt=""></summary>
       <div class="filter-grid">
-        <div class="filter-field"><label for="domain">领域</label><select id="domain"><option value="">全部领域</option></select></div>
-        <div class="filter-field"><label for="kind">记录类型</label><select id="kind"><option value="">全部资料</option></select></div>
-        <div class="filter-field"><label for="status">状态</label><select id="status"><option value="">全部状态</option></select></div>
-        <div class="filter-field"><label for="relation">关系类型</label><select id="relation"><option value="">全部关系</option></select></div>
+        <div class="filter-field"><label for="domain"><span data-i18n="领域">领域</span></label><select id="domain"><option value="">全部领域</option></select></div>
+        <div class="filter-field"><label for="kind"><span data-i18n="记录类型">记录类型</span></label><select id="kind"><option value="">全部资料</option></select></div>
+        <div class="filter-field"><label for="status"><span data-i18n="状态">状态</span></label><select id="status"><option value="">全部状态</option></select></div>
+        <div class="filter-field"><label for="relation"><span data-i18n="关系类型">关系类型</span></label><select id="relation"><option value="">全部关系</option></select></div>
       </div>
     </details>
-    <details id="recordsPanel" open><summary><img class="icon" data-icon="list" alt="">记录与领域<span class="list-count" id="resultCount"></span><img class="icon chevron" data-icon="chevron-down" alt=""></summary><div id="results" class="results" role="region" aria-label="记录与领域列表" tabindex="0"></div></details>
-    <div class="sidebar-footer"><p class="export-note">完整图与摘要 · 离线可浏览<br>正文链接需联网和仓库访问权限</p></div>
+    <details id="recordsPanel" open><summary><img class="icon" data-icon="list" alt=""><span data-i18n="记录与领域">记录与领域</span><span class="list-count" id="resultCount"></span><img class="icon chevron" data-icon="chevron-down" alt=""></summary><div id="results" class="results" role="region" aria-label="记录与领域列表" data-i18n-aria-label="记录与领域列表" tabindex="0"></div></details>
+    <div class="sidebar-footer"><p class="export-note"><span data-i18n="完整图与摘要 · 离线可浏览">完整图与摘要 · 离线可浏览</span><br><span data-i18n="正文链接需联网和仓库访问权限">正文链接需联网和仓库访问权限</span></p></div>
   </aside>
-  <div id="leftSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整导航宽度" aria-controls="sidebar" title="拖动调整导航宽度；方向键微调"></div>
-  <section class="stage" aria-label="交互关系图">
-    <canvas id="graph" tabindex="0" aria-label="关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。"></canvas>
-    <div class="canvas-toolbar"><div class="explore-tools"><button id="focus" class="tool-button" aria-pressed="false" title="只看选中节点的关联"><img class="icon" data-icon="crosshair" alt="">关联</button><button id="labels" class="tool-button" aria-pressed="false">标签</button></div><div class="zoom-group" role="group" aria-label="图谱控制"><button id="zoomIn" aria-label="放大" title="放大"><img class="icon" data-icon="plus" alt=""></button><button id="zoomOut" aria-label="缩小" title="缩小"><img class="icon" data-icon="minus" alt=""></button><button id="reset" aria-label="重置探索" title="重置探索"><img class="icon" data-icon="rotate-ccw" alt=""></button></div></div>
+  <div id="leftSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整导航宽度" data-i18n-aria-label="调整导航宽度" aria-controls="sidebar" title="拖动调整导航宽度；方向键微调" data-i18n-title="拖动调整导航宽度；方向键微调"></div>
+  <section class="stage" aria-label="交互关系图" data-i18n-aria-label="交互关系图">
+    <canvas id="graph" tabindex="0" aria-label="关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。" data-i18n-aria-label="关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。"></canvas>
+    <div class="canvas-toolbar"><div class="explore-tools"><button id="focus" class="tool-button" aria-pressed="false" title="只看选中节点的关联" data-i18n-title="只看选中节点的关联"><img class="icon" data-icon="crosshair" alt=""><span data-i18n="关联">关联</span></button><button id="labels" class="tool-button" aria-pressed="false"><span data-i18n="标签">标签</span></button></div><div class="zoom-group" role="group" aria-label="图谱控制" data-i18n-aria-label="图谱控制"><button id="zoomIn" aria-label="放大" data-i18n-aria-label="放大" title="放大" data-i18n-title="放大"><img class="icon" data-icon="plus" alt=""></button><button id="zoomOut" aria-label="缩小" data-i18n-aria-label="缩小" title="缩小" data-i18n-title="缩小"><img class="icon" data-icon="minus" alt=""></button><button id="reset" aria-label="重置探索" data-i18n-aria-label="重置探索" title="重置探索" data-i18n-title="重置探索"><img class="icon" data-icon="rotate-ccw" alt=""></button></div></div>
     <div id="timeline" class="timeline" hidden></div>
     <div class="caption" role="status" aria-live="polite"><strong id="visibleCount"></strong><p id="hint">点击探索 · 拖动调整 · 滚轮或双指缩放</p></div>
   </section>
-  <div id="rightSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整详情宽度" aria-controls="detail" title="拖动调整详情宽度；方向键微调"></div>
-  <aside id="detail" class="inspector idle" aria-label="记录详情"></aside>
+  <div id="rightSplitter" class="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整详情宽度" data-i18n-aria-label="调整详情宽度" aria-controls="detail" title="拖动调整详情宽度；方向键微调" data-i18n-title="拖动调整详情宽度；方向键微调"></div>
+  <aside id="detail" class="inspector idle" aria-label="记录详情" data-i18n-aria-label="记录详情"></aside>
 </main>
 <script id="atlas-data" type="application/json">__ATLAS_DATA__</script>
 <script id="atlas-icons" type="application/json">__ATLAS_ICONS__</script>
@@ -229,10 +239,74 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 const data = JSON.parse(document.getElementById('atlas-data').textContent);
 const icons = JSON.parse(document.getElementById('atlas-icons').textContent);
 const $ = id => document.getElementById(id);
-const typeNames = {domain:'领域',person:'人物',organization:'机构',place:'地点',profile:'个人资料',topic:'主题',preference:'偏好',routine:'习惯',state:'状态',event:'事件',decision:'决策',goal:'目标',project:'项目',asset:'资产',source:'来源'};
-const relNames = {in_domain:'属于领域',about:'关于',part_of:'组成部分',participated_in:'参与',located_at:'位于',works_at:'任职',knows:'认识',supports:'支持',contradicts:'反证',supersedes:'替代',derived_from:'依据来源',depends_on:'依赖',related_to:'相关',extracted_as:'整理为'};
-const statusNames = {active:'当前',historical:'历史',disputed:'有争议',retracted:'已撤回'};
-const domainNames = {communication:'沟通',culture:'文化生活',devices:'设备与工具',education:'教育与学习',family:'家庭',finance:'财务',food:'饮食',health:'健康',identity:'身份认同',language:'语言',life:'生活',psychology:'心理',sport:'运动',technology:'技术',travel:'旅行',values:'价值观',work:'工作'};
+const typeNamesZh = {domain:'领域',person:'人物',organization:'机构',place:'地点',profile:'个人资料',topic:'主题',preference:'偏好',routine:'习惯',state:'状态',event:'事件',decision:'决策',goal:'目标',project:'项目',asset:'资产',source:'来源'};
+const relNamesZh = {in_domain:'属于领域',about:'关于',part_of:'组成部分',participated_in:'参与',located_at:'位于',works_at:'任职',knows:'认识',supports:'支持',contradicts:'反证',supersedes:'替代',derived_from:'依据来源',depends_on:'依赖',related_to:'相关',extracted_as:'整理为'};
+const statusNamesZh = {active:'当前',historical:'历史',disputed:'有争议',retracted:'已撤回'};
+const domainNamesZh = {communication:'沟通',culture:'文化生活',devices:'设备与工具',education:'教育与学习',family:'家庭',finance:'财务',food:'饮食',health:'健康',identity:'身份认同',language:'语言',life:'生活',psychology:'心理',sport:'运动',technology:'技术',travel:'旅行',values:'价值观',work:'工作'};
+
+const typeNamesEn = {domain:'Domain',person:'Person',organization:'Organization',place:'Place',profile:'Profile',topic:'Topic',preference:'Preference',routine:'Routine',state:'State',event:'Event',decision:'Decision',goal:'Goal',project:'Project',asset:'Asset',source:'Source'};
+const relNamesEn = {in_domain:'In domain',about:'About',part_of:'Part of',participated_in:'Participated in',located_at:'Located at',works_at:'Works at',knows:'Knows',supports:'Supports',contradicts:'Contradicts',supersedes:'Supersedes',derived_from:'Derived from',depends_on:'Depends on',related_to:'Related to',extracted_as:'Extracted as'};
+const statusNamesEn = {active:'Active',historical:'Historical',disputed:'Disputed',retracted:'Retracted'};
+const domainNamesEn = {communication:'Communication',culture:'Culture',devices:'Devices & tools',education:'Education & learning',family:'Family',finance:'Finance',food:'Food',health:'Health',identity:'Identity',language:'Language',life:'Life',psychology:'Psychology',sport:'Sport',technology:'Technology',travel:'Travel',values:'Values',work:'Work'};
+let language = document.documentElement.dataset.language;
+let typeNames = typeNamesZh, relNames = relNamesZh, statusNames = statusNamesZh, domainNames = domainNamesZh;
+const english = {
+  '个人信息罗盘':'Personal Atlas', '自动':'Auto', '记录':'Records', '节点':'Nodes', '关系':'Relations',
+  '关系图':'Graph', '时间线':'Timeline', '筛选':'Filters', '领域':'Domain', '记录类型':'Record type',
+  '状态':'Status', '关系类型':'Relation type', '记录与领域':'Records & domains',
+  '全部领域':'All domains', '全部资料':'All records', '全部状态':'All statuses', '全部关系':'All relations',
+  '完整图与摘要 · 离线可浏览':'Complete graph & summaries · Available offline',
+  '正文链接需联网和仓库访问权限':'Record links require internet and repository access',
+  '关联':'Related', '标签':'Labels', '页面主题':'Page theme', '浅色主题':'Light theme', '深色主题':'Dark theme',
+  '跟随系统':'Follow system', '搜索记录、摘要或别名':'Search records, summaries or aliases',
+  '搜索记录、摘要或别名…':'Search records, summaries or aliases…', '导航与筛选':'Navigation & filters',
+  '浏览方式':'Browse', '记录与领域列表':'Records & domains list', '调整导航宽度':'Resize navigation',
+  '拖动调整导航宽度；方向键微调':'Drag to resize navigation; use arrow keys for fine adjustments',
+  '调整详情宽度':'Resize details', '拖动调整详情宽度；方向键微调':'Drag to resize details; use arrow keys for fine adjustments',
+  '交互关系图':'Interactive graph', '关系图。拖动调整、滚轮或双指缩放，也可使用缩放按钮和左侧节点列表。':'Relationship graph. Drag to move, scroll or pinch to zoom, or use the zoom buttons and node list.',
+  '只看选中节点的关联':'Show only connections to the selected node', '图谱控制':'Graph controls',
+  '放大':'Zoom in', '缩小':'Zoom out', '重置探索':'Reset exploration', '记录详情':'Record details',
+  '点击探索 · 拖动调整 · 滚轮或双指缩放':'Click to explore · Drag to move · Scroll or pinch to zoom',
+  '现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定':'Newest first · Unknown dates last · Mixed date precision may affect ordering',
+  '先选择一个节点，再查看它的关联。':'Select a node first to explore its connections.',
+  '没有匹配的记录。':'No matching records.', '生成于 ':'Generated ', '固定快照 ':'Snapshot ',
+  '完整图与摘要；正文通过远端链接查看。':'Complete graph and summaries; open remote links for full records.',
+  '待整理来源：':'Unprocessed sources: ', '此 HTML 含个人记录摘要。筛选改变显示范围，文件仍保留全部图数据。':'This HTML contains personal record summaries. Filters change the view; the file retains all graph data.',
+  '从一个点，\n看见更多连接':'Start with one point.\nDiscover more connections.',
+  '选择记录或领域，查看摘要与关联。你也可以用搜索和筛选，找到这张图里的一段经历。':'Select a record or domain to explore its summary and connections. Search and filter to find a chapter in this map.',
+  '无时间信息':'No date information', '时间未知':'Date unknown', '开始时间未知':'Start date unknown',
+  '结束时间未记录':'End date not recorded', '关闭详情':'Close details',
+  '领域导航，连接属于这一领域的记录。':'Browse records connected to this domain.',
+  '类型':'Type', '时间':'Date', '精度':'Precision', '关联记录':'Related records',
+  '条关系':'relations', '当前关系筛选下没有关联。':'No connections match the current relation filter.',
+  '关联记录列表':'Related records list', '指向 · ':'To · ', '来自 · ':'From · ', '事实编号：':'Claim ID: ',
+  '正文与来源':'Records & sources', '查看远端完整记录':'Open full remote record',
+  '经历的时间线':'Life timeline', '当前范围没有带时间的记录。':'No dated records in the current view.',
+  ' 个节点 · ':' nodes · ', ' 条关系':' relations'
+};
+function t(text) { return language === 'en' ? (english[text] || text) : text; }
+function viewHint() { return t(view === 'time' ? '现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定' : '点击探索 · 拖动调整 · 滚轮或双指缩放'); }
+function applyLanguage(next, save = true) {
+  language = next === 'en' ? 'en' : 'zh-CN';
+  document.documentElement.lang = language;
+  document.documentElement.dataset.language = language;
+  document.title = language === 'en' ? 'Personal Atlas' : 'Personal Atlas · 个人信息罗盘';
+  typeNames = language === 'en' ? typeNamesEn : typeNamesZh;
+  relNames = language === 'en' ? relNamesEn : relNamesZh;
+  statusNames = language === 'en' ? statusNamesEn : statusNamesZh;
+  domainNames = language === 'en' ? domainNamesEn : domainNamesZh;
+  document.querySelectorAll('[data-i18n]').forEach(item => { item.textContent = t(item.dataset.i18n); });
+  ['aria-label','title','placeholder'].forEach(attr => document.querySelectorAll('[data-i18n-'+attr+']').forEach(item => item.setAttribute(attr,t(item.getAttribute('data-i18n-'+attr)))));
+  const toggle = $('languageToggle'), label = language === 'en' ? '切换为中文 / Switch to Chinese' : '切换为英文 / Switch to English';
+  toggle.textContent = language === 'en' ? '中文' : 'EN';
+  toggle.setAttribute('aria-label',label);toggle.setAttribute('title',label);toggle.setAttribute('aria-pressed',String(language === 'en'));
+  if(save) { try { localStorage.setItem('personal-atlas.language', language); } catch (_) {} }
+  populateFilters();
+  $('hint').textContent = viewHint();
+  if(selected) renderDetail(byId.get(selected)); else renderIntro();
+  update();
+}
+
 const paletteLight = ['#cd8583','#b8a357','#d79867','#7299aa','#c27983','#919d59','#5e999b','#ae80a2','#b69d60','#9d8abd','#75a28b','#ca916a','#7e9fcb','#c9829b','#a1a862','#7397ac','#89a17a'];
 const paletteDark = ['#df9b99','#cfba72','#e8af83','#97b9c9','#de9ba5','#b7c37f','#8cbec0','#cea6c3','#d3bd83','#baa8db','#9dc9b3','#e7b08a','#a3bfdf','#e3a1b8','#c1c995','#9abbcd','#b1c6a4'];
 const nodes = data.nodes.map(n => ({...n}));
@@ -306,11 +380,18 @@ function applyTheme(mode, save = true) {
 document.querySelectorAll('[data-theme-mode]').forEach(button => button.onclick = () => applyTheme(button.dataset.themeMode));
 const systemChanged = () => { if(themeMode === 'system') applyTheme('system', false); };
 if(themeMedia.addEventListener) themeMedia.addEventListener('change', systemChanged); else themeMedia.addListener(systemChanged);
-domains.forEach(n => option($('domain'), n.id, displayTitle(n)));
-[...new Set(nodes.map(n=>n.type))].filter(t=>t!=='source').sort().forEach(t=>option($('kind'),t,typeNames[t]||t));
-if(nodes.some(n=>n.type==='source'))option($('kind'),'source','来源');
-[...new Set(nodes.map(n=>n.status).filter(Boolean))].sort().forEach(s=>option($('status'),s,statusNames[s]||s));
-[...new Set(data.edges.map(e=>e.type))].sort().forEach(r=>option($('relation'),r,relNames[r]||r));
+function populateFilters() {
+  const values=Object.fromEntries(['domain','kind','status','relation'].map(id=>[id,$(id).value]));
+  const defaults = {domain:'全部领域',kind:'全部资料',status:'全部状态',relation:'全部关系'};
+  Object.entries(defaults).forEach(([id,label])=>{$(id).replaceChildren();option($(id),'',t(label));});
+  // Adding options can change a select's value in a real browser; restore after all options exist.
+  domains.forEach(n => option($('domain'), n.id, displayTitle(n)));
+  [...new Set(nodes.map(n=>n.type))].filter(t=>t!=='source').sort().forEach(kind=>option($('kind'),kind,typeNames[kind]||kind));
+  if(nodes.some(n=>n.type==='source'))option($('kind'),'source',typeNames.source);
+  [...new Set(nodes.map(n=>n.status).filter(Boolean))].sort().forEach(status=>option($('status'),status,statusNames[status]||status));
+  [...new Set(data.edges.map(e=>e.type))].sort().forEach(relation=>option($('relation'),relation,relNames[relation]||relation));
+  Object.entries(values).forEach(([id,value])=>{$(id).value=value;});
+}
 $('records').textContent = data.root.record_count;
 $('nodeCount').textContent = nodes.length;
 $('edges').textContent = data.edges.length;
@@ -338,66 +419,66 @@ function update() {
   visible=candidates.filter(n=>!neighbors||neighbors.has(n.id));
   const ids=new Set(visible.map(n=>n.id));
   links=data.edges.filter(e=>ids.has(e.from)&&ids.has(e.to)&&(!r||e.type===r));
-  $('visibleCount').textContent=visible.length+' / '+nodes.length+' 个节点 · '+links.length+' / '+data.edges.length+' 条关系';
+  $('visibleCount').textContent=visible.length+' / '+nodes.length+t(' 个节点 · ')+links.length+' / '+data.edges.length+t(' 条关系');
   $('resultCount').textContent='('+visible.length+')';
   $('results').replaceChildren();
-  visible.slice().sort((a,b)=>displayTitle(a).localeCompare(displayTitle(b),'zh')).forEach(n=>{
+  visible.slice().sort((a,b)=>displayTitle(a).localeCompare(displayTitle(b),language)).forEach(n=>{
     const button=el('button',undefined,'result'+(selected===n.id?' selected':''));
     button.setAttribute('aria-pressed',String(selected===n.id));
     const copy=el('span',undefined,'result-copy');
     copy.append(el('span',displayTitle(n),'result-title'),el('span',(typeNames[n.type]||n.type)+(n.status?' · '+(statusNames[n.status]||n.status):''),'result-meta'));
     button.append(dot(n),copy);button.onclick=()=>select(n.id);$('results').append(button);
   });
-  if(!visible.length)$('results').append(el('p','没有匹配的记录。','muted'));
+  if(!visible.length)$('results').append(el('p',t('没有匹配的记录。'),'muted'));
   renderTimeline();draw();
 }
 function provenance(target) {
   const block=el('div',undefined,'provenance');
-  block.append(el('p','生成于 '+new Date(data.generated_at).toLocaleString()),el('p','固定快照 '+data.snapshot.slice(0,12)),el('p','完整图与摘要；正文通过远端链接查看。'),el('p','待整理来源：'+data.root.incomplete_sources));
-  target.append(block,el('p','此 HTML 含个人记录摘要。筛选改变显示范围，文件仍保留全部图数据。','notice'));
+  block.append(el('p',t('生成于 ')+new Date(data.generated_at).toLocaleString(language)),el('p',t('固定快照 ')+data.snapshot.slice(0,12)),el('p',t('完整图与摘要；正文通过远端链接查看。')),el('p',t('待整理来源：')+data.root.incomplete_sources));
+  target.append(block,el('p',t('此 HTML 含个人记录摘要。筛选改变显示范围，文件仍保留全部图数据。'),'notice'));
 }
 function renderIntro() {
   const panel=$('detail');panel.classList.add('idle');panel.replaceChildren();
-  panel.append(el('h2','从一个点，\n看见更多连接'),el('p','选择记录或领域，查看摘要与关联。你也可以用搜索和筛选，找到这张图里的一段经历。','description'));
+  panel.append(el('h2',t('从一个点，\n看见更多连接')),el('p',t('选择记录或领域，查看摘要与关联。你也可以用搜索和筛选，找到这张图里的一段经历。'),'description'));
   const legend=el('div',undefined,'domain-legend');
   domains.forEach(n=>{const button=el('button');button.append(dot(n),el('span',displayTitle(n)));button.onclick=()=>{$('domain').value=n.id;update();fit();select(n.id);};legend.append(button);});
   panel.append(legend);provenance(panel);reveal(panel);
 }
 function metaRow(target, name, label, value) { const row=el('div',undefined,'meta-row');row.append(icon(name),el('span',label,'meta-label'),el('span',value,'meta-value'));target.append(row); }
-function timeText(n) {const t=n.temporal||{};if(t.mode==='none')return '无时间信息';if(t.mode==='point')return t.at||'时间未知';return (t.start||'开始时间未知')+' → '+(t.end||'结束时间未记录');}
+function timeText(n) {const temporal=n.temporal||{};if(temporal.mode==='none')return t('无时间信息');if(temporal.mode==='point')return temporal.at||t('时间未知');return (temporal.start||t('开始时间未知'))+' → '+(temporal.end||t('结束时间未记录'));}
 function renderDetail(n) {
   const panel=$('detail');panel.classList.remove('idle');panel.replaceChildren();
   const top=el('div',undefined,'inspector-top'),close=el('button',undefined,'inspector-close');
-  close.setAttribute('aria-label','关闭详情');close.append(icon('x'));close.onclick=()=>{selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();};
+  close.setAttribute('aria-label',t('关闭详情'));close.append(icon('x'));close.onclick=()=>{selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();};
   top.append(dot(n),el('span',typeNames[n.type]||n.type),close);
-  panel.append(top,el('h2',displayTitle(n)),el('p',n.summary||'领域导航，连接属于这一领域的记录。','description'));
+  panel.append(top,el('h2',displayTitle(n)),el('p',n.summary||t('领域导航，连接属于这一领域的记录。'),'description'));
   const meta=el('div',undefined,'meta-list');
-  if(n.domains?.length)metaRow(meta,'tag','领域',n.domains.map(d=>domainNames[d]||d).join('、'));
-  metaRow(meta,'file-text','类型',typeNames[n.type]||n.type);
-  if(n.status)metaRow(meta,'crosshair','状态',statusNames[n.status]||n.status);
-  if(n.temporal?.mode!=='none'&&n.temporal){metaRow(meta,'clock','时间',timeText(n));if(n.temporal.precision_note)metaRow(meta,'clock','精度',n.temporal.precision_note);}
+  if(n.domains?.length)metaRow(meta,'tag',t('领域'),n.domains.map(d=>domainNames[d]||d).join(language==='en'?', ':'、'));
+  metaRow(meta,'file-text',t('类型'),typeNames[n.type]||n.type);
+  if(n.status)metaRow(meta,'crosshair',t('状态'),statusNames[n.status]||n.status);
+  if(n.temporal?.mode!=='none'&&n.temporal){metaRow(meta,'clock',t('时间'),timeText(n));if(n.temporal.precision_note)metaRow(meta,'clock',t('精度'),n.temporal.precision_note);}
   panel.append(meta);
   const rels=data.edges.filter(e=>(e.from===n.id||e.to===n.id)&&(!$('relation').value||e.type===$('relation').value));
-  const heading=el('div',undefined,'section-heading');heading.append(el('h3','关联记录'),el('span',rels.length+' 条关系'));panel.append(heading);
-  const related=el('div',undefined,'related-records');related.setAttribute('role','region');related.setAttribute('aria-label','关联记录列表');related.setAttribute('tabindex','0');
-  if(!rels.length)related.append(el('p','当前关系筛选下没有关联。','muted'));
+  const heading=el('div',undefined,'section-heading');heading.append(el('h3',t('关联记录')),el('span',rels.length+t(' 条关系')));panel.append(heading);
+  const related=el('div',undefined,'related-records');related.setAttribute('role','region');related.setAttribute('aria-label',t('关联记录列表'));related.setAttribute('tabindex','0');
+  if(!rels.length)related.append(el('p',t('当前关系筛选下没有关联。'),'muted'));
   rels.forEach(e=>{
     const outgoing=e.from===n.id,other=byId.get(outgoing?e.to:e.from),row=el('div',undefined,'related-row'),button=el('button',undefined,'related-button'),copy=el('span');
-    copy.append(el('span',displayTitle(other),'related-title'),el('div',(outgoing?'指向 · ':'来自 · ')+(relNames[e.type]||e.type),'related-meta'));
+    copy.append(el('span',displayTitle(other),'related-title'),el('div',(outgoing?t('指向 · '):t('来自 · '))+(relNames[e.type]||e.type),'related-meta'));
     button.append(dot(other),copy);button.onclick=()=>select(other.id);row.append(button);
-    if(e.claim)row.append(el('div','事实编号：'+e.claim,'related-meta'));related.append(row);
+    if(e.claim)row.append(el('div',t('事实编号：')+e.claim,'related-meta'));related.append(row);
   });
   panel.append(related);
-  if(n.url){const section=el('div',undefined,'section-heading');section.append(el('h3','正文与来源'));const link=el('a','查看远端完整记录','record-link');link.href=n.url;link.target='_blank';link.rel='noopener noreferrer';link.append(icon('arrow-up-right'));panel.append(section,link);}
+  if(n.url){const section=el('div',undefined,'section-heading');section.append(el('h3',t('正文与来源')));const link=el('a',t('查看远端完整记录'),'record-link');link.href=n.url;link.target='_blank';link.rel='noopener noreferrer';link.append(icon('arrow-up-right'));panel.append(section,link);}
   panel.append(el('div',n.id,'record-id'));provenance(panel);panel.scrollTop=0;reveal(panel);
 }
 function select(id) { const node=byId.get(id);if(!node)return;if(node.type==='source')$('kind').value='source';else if($('kind').value&&$('kind').value!==node.type)$('kind').value='';if($('domain').value&&node.id!==$('domain').value&&!(node.domains||[]).includes($('domain').value.slice(7)))$('domain').value='';if($('status').value&&$('status').value!==node.status)$('status').value='';selected=id;renderDetail(node);update();reveal(canvas); }
 function renderTimeline() {
-  const list=$('timeline');list.replaceChildren(el('h2','经历的时间线','timeline-heading'));
+  const list=$('timeline');list.replaceChildren(el('h2',t('经历的时间线'),'timeline-heading'));
   const rank=new Map(data.timeline.map((id,i)=>[id,i]));
   const timed=visible.filter(n=>n.temporal&&n.temporal.mode!=='none').sort((a,b)=>rank.get(a.id)-rank.get(b.id));
   timed.forEach(n=>{const card=el('div',undefined,'timecard'),button=el('button',n.title);button.onclick=()=>select(n.id);card.append(el('small',timeText(n)),button,el('p',n.summary||''));list.append(card);});
-  if(!timed.length)list.append(el('p','当前范围没有带时间的记录。','muted'));
+  if(!timed.length)list.append(el('p',t('当前范围没有带时间的记录。'),'muted'));
 }
 function fit(animate=true) {
   if(!visible.length||!width||!height)return;
@@ -448,10 +529,10 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoun
 canvas.ondblclick=fit;
 canvas.onkeydown=e=>{if(['+','=','-','0','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();if(e.key==='0')fit();else if(e.key==='+'||e.key==='=')zoomAt(zoom*1.25);else if(e.key==='-')zoomAt(zoom/1.25);else{pan.x+=e.key==='ArrowLeft'?30:e.key==='ArrowRight'?-30:0;pan.y+=e.key==='ArrowUp'?30:e.key==='ArrowDown'?-30:0;draw();}}};
 ['search','domain','kind','status','relation'].forEach(id=>$(id).addEventListener(id==='search'?'input':'change',()=>{if(id==='relation'&&selected)renderDetail(byId.get(selected));update();reveal(canvas);reveal($('results'));}));
-$('focus').onclick=()=>{if(!selected){$('hint').textContent='先选择一个节点，再查看它的关联。';return;}focus=!focus;$('focus').setAttribute('aria-pressed',String(focus));update();fit();};
+$('focus').onclick=()=>{if(!selected){$('hint').textContent=t('先选择一个节点，再查看它的关联。');return;}focus=!focus;$('focus').setAttribute('aria-pressed',String(focus));update();fit();};
 $('labels').onclick=()=>{showLabels=!showLabels;$('labels').setAttribute('aria-pressed',String(showLabels));draw();reveal(canvas);};
 $('zoomIn').onclick=()=>zoomAt(zoom*1.25,width/2,height/2,true);$('zoomOut').onclick=()=>zoomAt(zoom/1.25,width/2,height/2,true);
-function switchView(next){view=next;$('timeline').hidden=next!=='time';canvas.hidden=next==='time';$('zoomIn').hidden=next==='time';$('zoomOut').hidden=next==='time';$('labels').hidden=next==='time';$('mapView').setAttribute('aria-pressed',String(next==='map'));$('timeView').setAttribute('aria-pressed',String(next==='time'));$('hint').textContent=next==='time'?'现实时间从新到旧 · 未知时间末尾 · 日期精度不同，顺序可能不确定':'点击探索 · 拖动调整 · 滚轮或双指缩放';if(next==='map')resize();reveal(next==='map'?canvas:$('timeline'));}
+function switchView(next){view=next;$('timeline').hidden=next!=='time';canvas.hidden=next==='time';$('zoomIn').hidden=next==='time';$('zoomOut').hidden=next==='time';$('labels').hidden=next==='time';$('mapView').setAttribute('aria-pressed',String(next==='map'));$('timeView').setAttribute('aria-pressed',String(next==='time'));$('hint').textContent=viewHint();if(next==='map')resize();reveal(next==='map'?canvas:$('timeline'));}
 $('mapView').onclick=()=>switchView('map');$('timeView').onclick=()=>switchView('time');
 $('reset').onclick=()=>{['search','domain','kind','status','relation'].forEach(id=>$(id).value='');focus=false;showLabels=false;selected=null;hover=null;$('focus').setAttribute('aria-pressed','false');$('labels').setAttribute('aria-pressed','false');layout();renderIntro();update();$('results').scrollTop=0;$('sidebar').scrollTop=0;$('detail').scrollTop=0;switchView('map');fit();reveal(canvas);};
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('search').focus();}if(e.key==='Escape'&&selected){selected=null;focus=false;$('focus').setAttribute('aria-pressed','false');renderIntro();update();}});
@@ -469,7 +550,8 @@ function collapseForMobile(){if(narrow.matches){$('filtersPanel').open=false;$('
   });
 });
 collapseForMobile();if(narrow.addEventListener)narrow.addEventListener('change',collapseForMobile);
-loadIcons();layout();applyTheme(themeMode,false);new ResizeObserver(resize).observe(canvas);new ResizeObserver(constrainPanels).observe($('workspace'));constrainPanels();resize();fit(false);
+$('languageToggle').onclick=()=>applyLanguage(language==='en'?'zh-CN':'en');
+loadIcons();layout();applyLanguage(language,false);applyTheme(themeMode,false);new ResizeObserver(resize).observe(canvas);new ResizeObserver(constrainPanels).observe($('workspace'));constrainPanels();resize();fit(false);
 </script>
 </body>
 </html>
