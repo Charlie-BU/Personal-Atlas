@@ -38,7 +38,7 @@
 必填 id/type/title/summary/domains/temporal/basis。status 默认 active，aliases/relations/evidence 默认空，系统时间由 apply 生成。更新使用完整 meta/body，不是隐式字段补丁。
 
 - type：person、organization、place、profile、topic、preference、routine、state、event、decision、goal、project、asset、source。
-- domains：非空领域 ID 列表，自由扩充如 work/education/health/finance/family/life，自动形成 domain 节点。
+- domains：非空领域 ID 列表，只能使用以下 17 个固定领域之一，不可新增或自定义：identity、family、education、work、technology、health、finance、travel、culture、communication、devices、food、language、life、psychology、sport、values。每个 domain ID 自动形成 domain 节点。
 - basis：user_statement/document/third_party/inference/navigation。navigation 仅用于无事实断言的导航容器，不能用来绕过证据。
 - inference 必须有 uncertainty 和 evidence；其余事实记录也须 evidence。source 自己不必引用另一个 source。
 - title <=160 字符，summary <=500 字符；路由摘要通常 1–2 句，描述范围，不复制完整敏感细节。

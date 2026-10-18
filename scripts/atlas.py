@@ -30,6 +30,9 @@ STATUSES = {"active", "historical", "disputed", "retracted"}
 RELATIONS = {"about", "part_of", "participated_in", "located_at", "works_at",
              "knows", "supports", "contradicts", "supersedes", "derived_from",
              "depends_on", "related_to"}
+DOMAINS = frozenset({"identity", "family", "education", "work", "technology",
+                 "health", "finance", "travel", "culture", "communication", "devices",
+                 "food", "language", "life", "psychology", "sport", "values"})
 CANONICAL = ("records/", "sources/", "operations/", SKILL_PREFIX)
 GENERATED = ("graph/", "manifests/")
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -194,6 +197,10 @@ def records_from(files):
                     "Expected string list: " + field)
         require(meta["domains"] and all(ID.fullmatch(d) for d in meta["domains"]),
                 "At least one stable domain ID is required")
+        unknown = [d for d in meta["domains"] if d not in DOMAINS]
+        require(not unknown,
+                "Unknown domain(s): " + ", ".join(unknown) +
+                "; allowed domains: " + ", ".join(sorted(DOMAINS)))
         temporal_check(meta)
         if meta["basis"] == "inference":
             require(meta.get("uncertainty") and meta.get("evidence"),
@@ -614,7 +621,7 @@ def ingest(root, args, content):
     raw_path = "sources/" + rid + "/original" + suffix
     meta = new_meta({"id": rid, "type": "source", "title": args.title or args.name,
                      "summary": args.summary or "原始来源；尚未完成信息提取。",
-                     "domains": args.domain or ["inbox"], "temporal": {"mode": "none"},
+                     "domains": args.domain or ["life"], "temporal": {"mode": "none"},
                      "basis": "document", "source": {"raw_path": raw_path,
                          "sha256": content_hash, "original_name": args.name,
                          "coverage": "unprocessed", "coverage_note": "尚未提取；原文件完整保留。"}})
