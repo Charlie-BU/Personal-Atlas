@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local configuration, generated previews and build output
+.env
+.env.*
+!.env.example
+config.json
+output/
+dist/
+*.zip
