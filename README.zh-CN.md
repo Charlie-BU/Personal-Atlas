@@ -131,8 +131,7 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 
 ## 历史与开源协议
 
-从 [PersonalSkills](https://github.com/Charlie-BU/PersonalSkills) 的 `personal-atlas/`
-抽离，保留源 HEAD 祖先中涉及该目录的全部 11 次提交，包括作者、时间、说明和每个版本的文件树。
+独立技能保留全部 11 次相关开发提交，包括作者、时间、说明和每个版本的文件树。
 目录提升到根目录会改变提交 SHA，详见[历史说明](docs/HISTORY.md)和[提交映射](docs/history-map.json)。
 
 采用 [MIT 许可证](LICENSE)。Feather 图标保留[原始 MIT 声明](assets/feather-LICENSE.txt)，

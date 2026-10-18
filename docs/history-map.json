@@ -1,5 +1,4 @@
 {
-  "source_repository": "https://github.com/Charlie-BU/PersonalSkills",
   "source_head": "bce46eb9321e5a2f8cc415cce1eb0dc716bc3abc",
   "source_path": "personal-atlas/",
   "method": "git subtree split --prefix=personal-atlas",

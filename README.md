@@ -154,9 +154,7 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 
 ## History and license
 
-Extracted from `personal-atlas/` in
-[PersonalSkills](https://github.com/Charlie-BU/PersonalSkills), preserving all
-11 related commits from the source HEAD ancestry. Authors, timestamps, messages,
+The standalone skill preserves all 11 related development commits. Authors, timestamps, messages,
 and historical skill trees are preserved. Moving the directory to the repository
 root changes commit SHAs; the [history note](docs/HISTORY.md) and
 [commit map](docs/history-map.json) document the extraction.
