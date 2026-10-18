@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sys
 from urllib.parse import urlparse
-from atlas import AtlasError, require
+from atlas import AtlasError, require, atlas_scope, ATLAS_PREFIX
 
 
 def validate(data):
@@ -39,6 +39,7 @@ def validate(data):
 
 
 def collect(root):
+    root = atlas_scope(root)
     graph = json.loads(root['graph/root.json'])
     vault = json.loads(root['vault.json'])
     require(vault.get('schema_version') == 1 and vault.get('phase') != 'initializing'
@@ -62,7 +63,7 @@ def collect(root):
                 target.extend(page['edges'])
     canonical = lambda edges: sorted(json.dumps(e, sort_keys=True, ensure_ascii=False) for e in edges)
     require(canonical(outgoing) == canonical(incoming), 'Incoming/outgoing indexes disagree')
-    return validate({'snapshot': root.commit, 'root': graph, 'nodes': nodes, 'edges': outgoing,
+    return validate({'snapshot': root.commit, 'base_path': ATLAS_PREFIX, 'root': graph, 'nodes': nodes, 'edges': outgoing,
                      'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                      'verification': 'graph_inventory'})
 

@@ -62,16 +62,18 @@ git clone https://github.com/Charlie-BU/Personal-Atlas.git ~/.codex/skills/perso
 仓库根目录就是 Skill 目录，`SKILL.md`、`references/`、`scripts/` 和 `assets/` 应一起保留。
 其他宿主需支持 Agent Skills 并提供适配的仓库工具。这是独立技能，安装后仍需配置数据仓库与连接能力。
 
-### 2. 连接独立的私有资料仓库
+### 2. 连接个人数据仓库
 
-为个人资料新建一个**空的私有仓库**，不要预置 README 等文件。
-为 Agent 连接 Git 工具并授权访问该仓库。当前公开仓库用于分发代码，不用于保存你的个人档案。
+指定一个你控制的 Git 仓库，建议使用私有个人数据仓库。
+仓库可以为空，也可以已有 README、业务文件和其他 Skill 数据。
+Atlas 只管理其中的 **`atlas/`**，可与 `plans/`、`health/` 并存。
+为 Agent 连接 Git 工具并授权访问该仓库。
 
 可以对 Agent 说：
 
-> 使用 Personal Atlas。我的空私有资料仓库是
+> 使用 Personal Atlas。我的个人数据仓库是
 > `https://github.com/YOUR-NAME/YOUR-PRIVATE-ATLAS`。
-> 请检查访问能力、初始化资料库，再引导我完成首次访谈。敏感主题保存前先询问我。
+> 请检查访问能力，在 atlas/ 不存在时初始化资料库，再引导我完成首次访谈。敏感主题保存前先询问我。
 
 仓库配置可以来自当前对话、宿主或插件说明，也可选择外部
 `~/.config/personal-atlas/config.json`。上下文与已有授权足够时，无需本机配置文件或额外 PAT。
@@ -93,6 +95,33 @@ Skill 自身不包含认证或远端客户端。写入要求有受信任的计�
 
 初始化只有在实际远端提交与回读成功后才算完成。脚本返回 `prepared`
 表示变更已准备好，需要宿主工具发布，不等于资料已经远端保存。
+
+## 多个个人 Skill 共用仓库
+
+```text
+个人数据仓库/
+├── README.md           # 保留已有文件
+├── atlas/
+│   ├── vault.json
+│   ├── records/
+│   ├── sources/
+│   ├── graph/
+│   ├── operations/
+│   └── manifests/
+├── plans/              # 计划 Skill 管理
+└── health/             # 健康 Skill 管理
+```
+
+确认授权和目录清单后，不存在或为空的 `atlas/` 可初始化；已有有效 Atlas 则复用。
+`atlas` 是文件、或目录非空且不兼容时报告冲突，不覆盖。仓库根目录的格式和其他内容不受 Atlas 约束。
+
+脚本输入路径和输出增删改路径相对仓库根目录，输出严格限定在 `atlas/`。
+图内部引用仍相对 `atlas/`，正文链接包含真实前缀。宿主基于仓库原有树应用局部变化，
+并以**整个仓库 HEAD**保护并发；其他 Skill 推进分支时也需重新读取、核对并重建提案，不能强推。
+
+Atlas HTML 仅展示 Atlas 数据，共用仓库不自动授权跨 Skill 检索，也不提供目录级权限隔离。
+旧根目录资料不自动读取、移动或删除，迁入 `atlas/` 需明确授权迁移范围。
+本次更新技能，不迁移任何真实个人数据仓库。
 
 ## 体验虚构演示
 

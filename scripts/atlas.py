@@ -22,6 +22,7 @@ def require(condition, message):
 
 VERSION = 1  # Record/graph schema; connection configuration is external.
 SKILL = Path(__file__).resolve().parents[1]
+ATLAS_PREFIX = "atlas/"
 SKILL_PREFIX = "skill/personal-atlas/"
 ID = re.compile(r"^[a-z][a-z0-9_-]{0,95}$")
 KINDS = {"person", "organization", "place", "profile", "topic", "preference",
@@ -363,7 +364,8 @@ def skill_bundle():
 
 
 def checked(root):
-    require(all(owned(p) for p in root), "Unmanaged files in dedicated Atlas repository")
+    root = atlas_scope(root)
+    require(all(owned(p) for p in root), "Unmanaged files inside atlas/; inspect before modifying")
     require("vault.json" in root, "Remote is not a Personal Atlas vault")
     generated, records = derive(canonical(root))
     existing = {p for p in root if p.startswith(GENERATED)}
@@ -374,7 +376,7 @@ def checked(root):
 
 class Snapshot(dict):
     """Files supplied by the agent's existing tools, never fetched by this module."""
-    def __init__(self, files, commit, urls=None):
+    def __init__(self, files, commit, urls=None, *, _atlas_relative=False):
         require(commit is None or isinstance(commit, str) and
                 re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit), "Invalid commit")
         require(isinstance(files, dict), "Files must be a complete path/content mapping")
@@ -384,20 +386,40 @@ class Snapshot(dict):
                     "Unsafe repository path")
         super().__init__(files)
         self.commit, self.urls = commit, urls or {}
+        self._atlas_relative = _atlas_relative
 
     def url(self, path):
         return self.urls.get(path)
 
 
+
+def atlas_scope(root):
+    """View only atlas/ at a repository commit; graph paths stay vault-relative.
+
+    Inputs and publication paths are repository-relative. Unrelated repository
+    files never enter Atlas validation, rendering, or deletion calculations.
+    """
+    if isinstance(root, Snapshot) and root._atlas_relative:
+        return root
+    require("atlas" not in root, "atlas is a file, not a directory; choose a repository without this conflict")
+    files = {p[len(ATLAS_PREFIX):]: v for p, v in root.items() if p.startswith(ATLAS_PREFIX)}
+    urls = {p[len(ATLAS_PREFIX):]: root.url(p) for p in root if p.startswith(ATLAS_PREFIX)}
+    return Snapshot(files, root.commit, urls, _atlas_relative=True)
+
+
 def publish(root, proposed, message):
+    root = atlas_scope(root)
+    Snapshot(proposed, root.commit)  # Validate every output path before prefixing.
     require(all(owned(p) for p in proposed), "Unexpected file in operation")
     return {"status": "prepared", "base_commit": head(root), "message": message,
-            "files_base64": {p: base64.b64encode(v).decode("ascii")
+            "base_path": ATLAS_PREFIX,
+            "files_base64": {ATLAS_PREFIX + p: base64.b64encode(v).decode("ascii")
                              for p, v in proposed.items() if p not in root or root[p] != v},
-            "delete_paths": sorted(set(root) - set(proposed)), "remote_confirmed": False}
+            "delete_paths": sorted(ATLAS_PREFIX + p for p in set(root) - set(proposed)), "remote_confirmed": False}
 
 
 def initialize(root):
+    root = atlas_scope(root)
     if root:
         checked(root)
         return {"status": "already_initialized", "commit": head(root),
@@ -453,6 +475,7 @@ def new_meta(meta, old=None):
 
 
 def apply_plan(root, plan):
+    root = atlas_scope(root)
     files, records = checked(root)
     require(isinstance(plan.get("operation_id"), str) and ID.fullmatch(plan["operation_id"]),
             "Plan needs a stable operation_id")
@@ -601,6 +624,7 @@ def neighbors(root, records, args):
 
 
 def ingest(root, args, content):
+    root = atlas_scope(root)
     files, records = checked(root)
     require(content and len(content) <= MAX_SOURCE_BYTES, "Source must be 1 byte to 20 MiB; split larger input in memory")
     require(args.name and Path(args.name).name == args.name and args.name not in {'.', '..'},
@@ -679,16 +703,17 @@ def parser():
     return p
 
 
-def run(args, payload=None):
+def _run(args, payload=None):
     payload = payload if payload is not None else json.load(sys.stdin)
     root = Snapshot({p: base64.b64decode(v, validate=True)
                      for p, v in payload["files_base64"].items()},
                     payload.get("snapshot"), payload.get("urls"))
     require(not args.snapshot or args.snapshot == root.commit, "Snapshot mismatch")
+    root = atlas_scope(root)
     if args.command == "init":
         return initialize(root)
     require(root.commit is not None, "Existing Atlas needs a fixed commit")
-    require("vault.json" in root, "Remote is not an Atlas repository; run init")
+    require("vault.json" in root, "atlas/vault.json missing; initialize atlas/ explicitly (root-level vaults are not loaded)")
     vault = json.loads(root["vault.json"])
     require(vault.get("schema_version") == VERSION and vault.get("phase") != "initializing",
             "Remote initialization incomplete or incompatible; run init")
@@ -747,6 +772,11 @@ def run(args, payload=None):
             "url": root.url(raw),
             "lines": [{"line": args.offset + i + 1, "text": line} for i, line in enumerate(result["items"])],
             "next_offset": result["next_offset"], "truncated": result["truncated"]}
+
+
+
+def run(args, payload=None):
+    return {**_run(args, payload), "base_path": ATLAS_PREFIX}
 
 
 def main():

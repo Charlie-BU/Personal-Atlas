@@ -6,7 +6,9 @@ is available; otherwise open a public issue containing only a request for a
 private reporting channel, with no exploit details or sensitive data.
 
 This public repository distributes the skill and synthetic examples. Keep your
-personal Atlas in a separate private repository. Host connectors manage access;
+personal Atlas under `atlas/` in a private repository you control. Other personal
+skills may share that repository in their own directories. Directory boundaries
+are enforced by the skill, not by a repository-wide connector permission. Host connectors manage access;
 credentials and connection configuration belong outside the skill. HTML exports
 contain embedded summaries even when filters hide them. Deleting current files
 does not erase Git history, forks, clones, or previously exported HTML.

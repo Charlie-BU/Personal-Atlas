@@ -115,7 +115,7 @@ class AtlasCalculationTests(unittest.TestCase):
             self.apply([delete])
         leaf = self.run_cli('read', 'leaf')
         self.apply([delete, {'action': 'delete', 'id': 'leaf', 'expected_sha256': leaf['sha256']}])
-        self.assertFalse(any(p.startswith('sources/') for p in self.api.snapshot()))
+        self.assertFalse(any(p.startswith('atlas/sources/') for p in self.api.snapshot()))
         with self.assertRaisesRegex(AtlasError, 'was deleted'):
             self.run_cli('ingest', '--stdin', '--name', 'input.txt', data='测试材料。\n小明喜欢茶。\n2024年搬家。\n'.encode())
         meta = self.record('leaf'); meta.update(basis='navigation', evidence=[])
@@ -150,17 +150,86 @@ class AtlasCalculationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'prepared')
         self.assertFalse(result['remote_confirmed'])
         self.assertEqual(self.api.head(), root.commit)
-        self.assertNotIn('records/topic/ready.md', root)
-        self.assertIn('records/topic/ready.md', result['files_base64'])
-        self.assertTrue(any(p.startswith('graph/') for p in result['files_base64']))
+        self.assertNotIn('atlas/records/topic/ready.md', root)
+        self.assertIn('atlas/records/topic/ready.md', result['files_base64'])
+        self.assertTrue(any(p.startswith('atlas/graph/') for p in result['files_base64']))
 
-    def test_init_unique_ids_and_nonatlas_rejection(self):
+    def test_init_unique_ids_and_shared_repository(self):
         one = atlas.initialize(atlas.Snapshot({}, None))
         two = atlas.initialize(atlas.Snapshot({}, None))
         self.assertNotEqual(one['vault_id'], two['vault_id'])
         self.assertFalse(one['remote_confirmed'])
-        with self.assertRaises(AtlasError):
-            atlas.initialize(atlas.Snapshot({'README.md': b'unrelated'}, 'a' * 40))
+        initialized = atlas.initialize(atlas.Snapshot({'README.md': b'unrelated'}, 'a' * 40))
+        self.assertEqual(initialized['status'], 'prepared')
+        self.assertTrue(all(p.startswith('atlas/') for p in initialized['files_base64']))
+        self.assertEqual(initialized['delete_paths'], [])
+
+    def test_shared_repository_initialization_and_conflicts(self):
+        foreign = {'README.md': b'shared repository', 'plans/today.md': b'keep plans',
+                   'health/measurements.bin': b'\x00\xff', '.gitignore': b'root rules',
+                   'vault.json': b'not Atlas JSON', 'graph/root.json': b'other graph',
+                   'atlas-old/vault.json': b'old copy'}
+        api = MemoryFiles(); api.files.update(foreign); api.commit = 'a' * 40
+        result = atlas.initialize(api.snapshot())
+        self.assertEqual(result['base_commit'], 'a' * 40)
+        self.assertEqual(result['delete_paths'], [])
+        self.assertTrue(all(p.startswith('atlas/') for p in result['files_base64']))
+        api.accept(result)
+        self.assertEqual({p: api.files[p] for p in foreign}, foreign)
+        self.assertEqual(atlas.initialize(api.snapshot())['status'], 'already_initialized')
+        for conflicting in [{'atlas': b'file'}, {'atlas/README.md': b'occupied'},
+                            {'atlas/vault.json': b'{}'}]:
+            with self.assertRaises((AtlasError, KeyError)):
+                atlas.initialize(atlas.Snapshot({**foreign, **conflicting}, 'b' * 40))
+
+    def test_shared_repository_mutations_and_maintenance_are_scoped(self):
+        foreign = {'README.md': b'keep', 'plans/records/topic/item.md': b'plan',
+                   'health/graph/root.json': b'health', 'vault.json': b'unrelated',
+                   '.gitignore': b'existing root rules', 'atlas-copy/notes.txt': b'keep'}
+        self.api.files.update(foreign)
+        self.apply([self.put(self.record('leaf'))])
+        old = self.run_cli('read', 'leaf')
+        self.apply([self.put(old['meta'], 'Updated record.', old)])
+        for command in ['verify', 'reindex', 'archive-skill']:
+            result = self.run_cli(command)
+            if result['status'] == 'prepared':
+                self.assertTrue(all(p.startswith('atlas/') for p in result['files_base64']))
+                self.assertTrue(all(p.startswith('atlas/') for p in result['delete_paths']))
+        leaf = self.run_cli('read', 'leaf')
+        result = self.apply([{'action': 'delete', 'id': 'leaf', 'expected_sha256': leaf['sha256']}])
+        self.assertIn('atlas/records/topic/leaf.md', result['delete_paths'])
+        self.assertTrue(all(p.startswith('atlas/') for p in result['delete_paths']))
+        self.assertEqual({p: self.api.files[p] for p in foreign}, foreign)
+        # Serialized query envelopes always use repository paths, including source URLs.
+        self.assertIn('/atlas/records/source/', self.run_cli('read', self.source)['url'])
+        self.assertIn('/atlas/sources/', self.run_cli('source', self.source)['url'])
+        self.assertEqual(self.run_cli('status')['base_path'], 'atlas/')
+
+    def test_foreign_commit_requires_rebuilding_the_plan(self):
+        plan = self.plan([self.put(self.record('concurrent'))])
+        self.api.files['health/new.md'] = b'concurrent health update'
+        self.api.commit = 'b' * 40
+        before = dict(self.api.files)
+        with self.assertRaisesRegex(AtlasError, 'Stale base_commit'):
+            self.run_cli('apply', data=atlas.encoded(plan))
+        self.assertEqual(self.api.files, before)
+        rebuilt = self.plan([self.put(self.record('concurrent'))])
+        self.run_cli('apply', data=atlas.encoded(rebuilt))
+        self.assertEqual(self.api.files['health/new.md'], b'concurrent health update')
+        self.assertEqual(self.run_cli('verify')['status'], 'valid')
+
+    def test_namespace_escape_and_legacy_root_are_not_accepted(self):
+        root = self.api.snapshot()
+        for path in ['../health/record.md', 'records/../../health/record.md',
+                     '/health/record.md', 'health/record.md', 'atlas/records/topic/x.md']:
+            with self.assertRaises(AtlasError):
+                atlas.publish(root, {path: b'escape'}, 'invalid')
+        # Root-level data is never silently treated as the namespaced vault.
+        legacy = {p.removeprefix('atlas/'): v for p, v in root.items()}
+        args = atlas.parser().parse_args(['--stdin', 'status'])
+        with self.assertRaisesRegex(AtlasError, 'atlas/vault.json missing'):
+            atlas.run(args, {'snapshot': root.commit,
+                'files_base64': {p: base64.b64encode(v).decode() for p, v in legacy.items()}})
 
     def test_stdin_pipeline_has_no_network_or_data_file_writes(self):
         root = self.api.snapshot()
@@ -174,7 +243,7 @@ class AtlasCalculationTests(unittest.TestCase):
              patch.object(Path, 'write_text', side_effect=AssertionError('data written')):
             self.assertEqual(atlas.run(args)['status'], 'prepared')
         damaged = self.api.snapshot()
-        damaged.pop('graph/root.json')
+        damaged.pop('atlas/graph/root.json')
         with self.assertRaises(AtlasError):
             atlas.apply_plan(damaged, payload['plan'])
 

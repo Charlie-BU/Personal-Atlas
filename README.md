@@ -79,16 +79,17 @@ and `assets/` must stay together. Other hosts must support agent skills and
 provide their own compatible repository tools. This is a standalone skill,
 not an automatically connected MCP server or a hosted web application.
 
-### 2. Connect a separate private data repository
+### 2. Connect your personal data repository
 
-Create an **empty, private repository** for your personal data, without a README
-or other initial files. Connect your agent's Git tools and authorize access to
-that repository. This public code repository is not your personal vault.
+Choose a Git repository you control; a private personal-data repository is
+recommended. It can be empty or already contain files and other skills' data.
+Atlas manages only **`atlas/`**, alongside directories such as `plans/` and `health/`.
+Connect your agent's Git tools and authorize access to that repository.
 
 Tell your agent, for example:
 
-> Use Personal Atlas. My empty private data repository is
-> `https://github.com/YOUR-NAME/YOUR-PRIVATE-ATLAS`. Check access, initialize it,
+> Use Personal Atlas. My personal data repository is
+> `https://github.com/YOUR-NAME/YOUR-PRIVATE-ATLAS`. Check access, initialize `atlas/` if absent,
 > and guide me through the first interview. Ask before saving sensitive topics.
 
 Repository configuration can come from the conversation, host/plugin settings,
@@ -115,6 +116,39 @@ Try requests such as:
 Initialization is successful only after a real remote commit and readback.
 The helper scripts returning `prepared` means changes are ready for the host to
 publish; it does not mean your data was saved remotely.
+
+## Share one repository across personal skills
+
+```text
+personal-data/
+├── README.md           # Existing files are preserved
+├── atlas/
+│   ├── vault.json
+│   ├── records/
+│   ├── sources/
+│   ├── graph/
+│   ├── operations/
+│   └── manifests/
+├── plans/              # Managed by a planning skill
+└── health/             # Managed by a health skill
+```
+
+An absent or empty `atlas/` can be initialized after access and directory checks.
+An existing valid Atlas is reused; a file named `atlas` or an incompatible,
+non-empty directory is a conflict and is never overwritten. Repository-level
+format, README files and sibling directories do not need to conform to Atlas.
+
+The helpers receive repository-relative input paths and emit only `atlas/`
+changes and deletions. Graph references remain relative to `atlas/`; record URLs
+include the actual prefix. The host applies changes to the existing repository
+tree and protects the **repository HEAD**, including concurrent commits by other
+skills. It must reread and rebuild after a conflict, without force-pushing.
+
+The Atlas HTML covers Atlas data only. A shared repository does not automatically
+authorize cross-skill retrieval or provide directory-level access control.
+Legacy root-level vaults are not silently loaded, moved, or deleted; moving an
+existing vault into `atlas/` requires an explicitly scoped migration. This release
+updates the skill and does not migrate any personal data repository.
 
 ## Try the fictional demo
 

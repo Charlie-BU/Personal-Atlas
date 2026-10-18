@@ -5,12 +5,14 @@
 ## 连接与快照
 
 1. 解析外部配置，包括当前上下文与上层 plugin 说明；必要信息齐全即可继续，本机 config.json 不可访问不阻塞。仅所有可用来源仍无仓库地址时提示补充。无分支先查询仓库默认分支。
-2. 实际查询目标分支 HEAD，固定 commit 读取 vault.json 和 graph/root.json。
+2. 实际查询目标分支 HEAD，固定 commit 读取 atlas/vault.json 和 atlas/graph/root.json。
 3. 解析实际工具返回，检查 schema_version=1、vault 非 initializing、vault.id=graph.vault_id。配置 expected_vault_id 时再匹配。错误标记、业务错误及缺失内容均算失败，不以工具完成提示代替成功。
 4. 报告 snapshot、remote_checked=true、verification=entrypoint_only。仅入口可读不等于全库验证。查询继续读取相关记录。
 5. 同轮分页/多跳固定 commit；需要最新状态时重读 HEAD，变化后复核。若工具无法读取固定版本，说明限制，不声称一致快照。
 
 ## 按图查询
+
+以下图内路径均相对 atlas/；实际工具读取路径加上 atlas/，例如 atlas/graph/nodes/...。固定目录只服务 Atlas，不扫描 plans/、health/ 等其他目录。
 
 - root.node_pages 是分页文件路径数组；读取每页取得节点 ID，再读 `graph/nodes/<id 中冒号替换为双短横线>.json`。节点含摘要、类型、状态、领域、正文 path 与 adjacency。
 - domain 节点通常没有正文，沿 incoming 领域边选择相关记录；不能据此判断无资料。
@@ -25,3 +27,7 @@
 先确认工具支持一次提交中增删多个文件、基于 base_commit 的并发保护和非强制分支更新，以及读取提交结果。查询能力不代表写能力。使用 mutations.md 的纯计算流程准备完整变更，再将内容交给现有工具发布；Skill 脚本的 prepared 状态不是远端保存成功。
 
 不直接逐文件 update records 后补图，避免产生不一致版本。工具缺少安全提交能力或当前环境没有受信任的校验能力时，说明具体写入限制，仍继续授权的查询。不同工具账号/权限分别诊断，不静默切换身份。
+
+## 共享仓库发布
+
+只读取、校验和修改 atlas/。首次初始化不要求仓库为空，只要求目标 atlas/ 缺失或为空；已存在有效资料库复用，不兼容内容报告冲突。prepared 文件与删除路径均带 atlas/ 前缀，工具以现有仓库树为基底应用局部变更，保留其他所有路径。整个仓库 HEAD 用作 base_commit；任意 Skill 推进分支后均需重读、核对并重建提案，不强推。入口成功只说明 Atlas 可读，不能据此声称其他 Skill 目录已被查询。

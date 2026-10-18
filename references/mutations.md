@@ -4,7 +4,7 @@
 
 ## 操作包
 
-先用现有工具取得 HEAD 与完整固定快照，read 取得完整 meta/body 和 sha256。操作包只保存在内存，通过 stdin 传给脚本；不写临时文件，不将原文拼接为 shell 命令。
+先用现有工具取得仓库 HEAD 与 atlas/ 的完整固定快照，read 取得完整 meta/body 和 sha256。操作包只保存在内存，通过 stdin 传给脚本；不写临时文件，不将原文拼接为 shell 命令。
 
 ```json
 {
@@ -79,14 +79,16 @@ atlas.py 不读取配置、认证、联网或更新分支。所有命令均以 `
 ```json
 {
   "snapshot": "<现有工具读取的固定commit>",
-  "files_base64": {"vault.json": "<文件原始字节的base64>", "graph/root.json": "<base64>", "其他路径": "<base64>"},
-  "urls": {"records/topic/example.md": "<可选的无凭据固定提交HTTPS链接>"},
+  "files_base64": {"atlas/vault.json": "<文件原始字节的base64>", "atlas/graph/root.json": "<base64>", "atlas/其他路径": "<base64>"},
+  "urls": {"atlas/records/topic/example.md": "<可选的无凭据固定提交HTTPS链接>"},
   "plan": {"operation_id": "op_example", "base_commit": "<同一commit>", "changes": []}
 }
 ```
 
-apply/verify/reindex/ingest/归档需要完整文件清单及内容（含已有静态 Skill 副本），不得把部分数据伪装成完整快照。查询按所用命令提供全部相关页和正文。plan 仅 apply 需要；ingest 用 source_base64 字段传原始字节，并以 --name 指定文件名。init 仅对工具已确认的空目标传 files_base64={}；无初始提交时 snapshot=null。脚本会生成新 vault ID，不改外部配置。
+apply/verify/reindex/ingest/归档需要 atlas/ 内完整文件清单及内容（含该目录下已有静态 Skill 副本），不需要读取其他 Skill 内容，不得把部分数据伪装成完整快照。查询按所用命令提供全部相关页和正文。plan 仅 apply 需要；ingest 用 source_base64 字段传原始字节，并以 --name 指定文件名。init 仅对工具已确认不存在或为空的 atlas/ 传 files_base64={}；非空仓库也可初始化，snapshot 使用当前仓库 HEAD，只有仓库无初始提交时才为 null。atlas 是文件或 atlas/ 非空不兼容时停止。脚本会生成新 vault ID，不改外部配置。
 
-写命令输出 status=prepared、base_commit、message、files_base64（新增/更新）及 delete_paths。它们只是经过校验的变更，remote_confirmed=false；agent 必须解码并交给现有工具，在 base_commit 未变化时原子发布，再读远端核查结果。重复操作的 already_applied/already_imported 也只说明输入快照已包含记录，远端状态仍由实际工具确认。不要把脚本输出直接当保存回执。
+写命令输出 status=prepared、base_commit、message、files_base64（新增/更新）及 delete_paths，所有输出路径均带 atlas/ 前缀，base_path=atlas/。它们只是经过校验的变更，remote_confirmed=false；agent 必须解码并交给现有工具，在 base_commit 未变化时原子发布，再读远端核查结果。重复操作的 already_applied/already_imported 也只说明输入快照已包含记录，远端状态仍由实际工具确认。不要把脚本输出直接当保存回执。
 
 可用命令：init、apply、ingest、verify、reindex、archive-skill、status、graph、search、list、read、source、neighbors、timeline、visualize。archive-skill 仅在用户要求归档时使用；无 Python 可用等价受信任校验能力，不能省略结构校验和同提交发布。
+
+宿主必须基于仓库已有树只应用 atlas/ 的变更，完整保留其他路径；不可用子树快照替换仓库根树。计划 base_commit 对应整个仓库的 HEAD；其他目录发生新提交也需重新读取并核对、重建操作包。脚本内部及图中的相对路径以 atlas/ 为根，信封文件路径和正文 URL 则使用真实仓库路径。

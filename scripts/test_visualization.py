@@ -28,6 +28,18 @@ class VisualizationTests(unittest.TestCase):
         collect(self.fixture.api.snapshot())
         self.assertEqual(before, self.fixture.api.head())
 
+    def test_shared_repository_export_ignores_other_skills_and_prefixes_links(self):
+        self.fixture.api.files.update({'health/private.json': b'HEALTH_PRIVATE_VALUE',
+                                       'plans/today.md': b'PLAN_PRIVATE_VALUE',
+                                       'vault.json': b'not Atlas', 'graph/root.json': b'not Atlas'})
+        data = collect(self.fixture.api.snapshot())
+        html = render(data)
+        self.assertNotIn('HEALTH_PRIVATE_VALUE', html)
+        self.assertNotIn('PLAN_PRIVATE_VALUE', html)
+        self.assertEqual(data['base_path'], 'atlas/')
+        self.assertTrue(all('/atlas/records/' in n['url'] for n in data['nodes'] if n.get('url')))
+        self.assertEqual(len(data['nodes']), self.data['root']['node_count'])
+
     def test_missing_node_edge_and_bad_incoming_rejected(self):
         for key in ['nodes', 'edges']:
             bad = copy.deepcopy(self.data)
@@ -74,8 +86,8 @@ class VisualizationTests(unittest.TestCase):
         f = self.fixture
         f.apply([f.put(f.record('topic_' + str(i))) for i in range(82)])
         root = f.api.snapshot()
-        graph = json.loads(root['graph/root.json'])
-        domain = json.loads(root['graph/nodes/domain--life.json'])
+        graph = json.loads(root['atlas/graph/root.json'])
+        domain = json.loads(root['atlas/graph/nodes/domain--life.json'])
         self.assertGreater(len(graph['node_pages']), 1)
         self.assertGreater(len(domain['adjacency']['incoming']), 1)
         complete = collect(root)

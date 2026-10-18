@@ -9,7 +9,7 @@ description: "保存、整理、检索和增删改用户个人资料，以 Markd
 
 ## 首次使用与资料完善
 
-用户初次使用、从零建库或希望被引导完善个人资料时，先读 [onboarding.md](references/onboarding.md)。先简要介绍功能、Git 保存方式、可修改/纠错与可交互 HTML 图谱能力，再请用户提供空的专用 Git 仓库（上下文已有则复用）。通过现有工具检查读取与写入能力；需要时指导连接 MCP/插件或在外部配置中授权 PAT，已有授权足够则不要求令牌。空库初始化要经实际远端提交与回读确认，不能把 prepared 当成功。
+用户初次使用、从零建库或希望被引导完善个人资料时，先读 [onboarding.md](references/onboarding.md)。先简要介绍功能、Git 保存方式、可修改/纠错与可交互 HTML 图谱能力，再请用户指定 Git 仓库（可空可非空，可与其他个人 Skill 共用；上下文已有则复用）。通过现有工具检查读取与写入能力；需要时指导连接 MCP/插件或在外部配置中授权 PAT，已有授权足够则不要求令牌。`atlas/` 初始化要经实际远端提交与回读确认，不能把 prepared 当成功。
 
 初始化成功后，按 12 个维度进行第一遍访谈，每轮一个主题、一次给出该主题的完整问题组，允许编号回答或自由叙述、跳过与指定不保存。先覆盖主题，再作详细追问；根据已有资料和用户选择调整。保存获准的原话、细粒度事实、关系与时间，记录远端访谈进度以便续办。积累数个主题和足够关系后主动建议生成 HTML，第一遍完成时再次提供建议；用户想提前看也可生成。已有资料库不重新初始化，纯查询不强制进入访谈。
 
@@ -21,8 +21,14 @@ description: "保存、整理、检索和增删改用户个人资料，以 Markd
 2. 必须确定目标仓库地址；分支未给出时可用现有工具查询该仓库默认分支，不假定 main/master。配置冲突影响目标时请用户选择，不猜个人账号或复用别人的仓库。vault ID 默认从目标仓库读取；外部配置提供 expected_vault_id 时才作额外匹配。
 3. 发现 agent 已有、适配目标服务的连接器、插件或已授权 Git/CLI 能力，例如 ChatGPT GitHub plugin。支持 GitHub、GitLab、Gitee 和自建 Git 服务，实际可执行范围取决于宿主工具。Skill 不实现远端协议、认证或平台 API，也不自动安装客户端。没有适配能力时提示用户连接/启用相关工具；提供 PAT 本身不等于具备工具。
 4. 仓库地址等必要信息不存在或不完整时，明确缺失项与可用配置位置，请用户补充。PAT 可选：已授权工具能访问时不要求另给 PAT；需要认证且现有能力未授权时提示完成授权，或通过工具支持的外部配置提供凭据。不在聊天中索取令牌原文。
-5. 对已有资料库的查询、写入和连接检查，配置与能力就绪后实际读取分支 HEAD，再按该 commit 读取 vault.json 与 graph/root.json。检查 schema_version=1、非 initializing、vault.id 与 graph.vault_id 一致，必要时检查 expected_vault_id。成功只说明入口可用，verification=entrypoint_only；继续读取任务相关记录。首次空库初始化按 onboarding.md 区分无初始提交和访问失败，发布后再验证入口。仅编辑/审查 Skill 源码不需要连接个人资料仓库。
+5. 对已有资料库的查询、写入和连接检查，配置与能力就绪后实际读取分支 HEAD，再按该 commit 读取 atlas/vault.json 与 atlas/graph/root.json。检查 schema_version=1、非 initializing、vault.id 与 graph.vault_id 一致，必要时检查 expected_vault_id。成功只说明入口可用，verification=entrypoint_only；继续读取任务相关记录。首次目录初始化按 onboarding.md 区分无初始提交和访问失败，发布后再验证入口。仅编辑/审查 Skill 源码不需要连接个人资料仓库。
 6. 报告真实的授权、权限、资源不存在、网络或能力错误，保留诊断但隐藏凭据。失败不等于资料不存在，不静默回退记忆。既有个人信息优先查询用户配置的 Atlas；成功查询确有缺口后才使用其他授权来源，或按用户明确要求提供注明来源的临时回答。
+
+## 共享仓库边界
+
+所有 Atlas 数据固定存于用户指定仓库的 `atlas/`：vault、records、sources、operations、graph、manifests 及可选 Skill 归档均在其中。仓库无需为空，根目录无需符合 Atlas 格式；`plans/`、`health/`、根目录文件等均不属于 Atlas 的读写范围。只在用户授权初始化且已确认 `atlas/` 不存在或为空时新建；目录已有有效 Atlas 则复用，文件占位或非空不兼容内容则报告冲突，不覆盖。没有访问权限或目录清单不完整不能当作不存在。旧根目录资料不自动迁移或混入；迁移须用户明确指定范围。
+
+读取固定仓库 commit，按需取得 `atlas/` 子树；写入必须完整取得该子树并只发布 `atlas/` 下的增删改，使用仓库原有树作为基础保留其他路径。`base_commit` 始终是整个仓库的 HEAD，其他 Skill 推进分支后也需重读、核对并重建变更，禁止强推。图内部路径相对 `atlas/`，工具请求与发布路径相对仓库根目录，必须准确加前缀。详见 [storage.md](references/storage.md)。
 
 ## 入口与路由
 
@@ -51,7 +57,7 @@ description: "保存、整理、检索和增删改用户个人资料，以 Markd
 
 ## 图导航与检索
 
-1. 读取 vault.json 和 graph/root.json 获取版本、领域种子和未完成提取来源数。JSON 根入口为数据仓库 `graph/root.json`。
+1. 读取 atlas/vault.json 和 atlas/graph/root.json 获取版本、领域种子和未完成提取来源数。JSON 根入口为数据仓库 `atlas/graph/root.json`。
 2. 通过图目录与正文检索找种子，再用 neighbors 沿指定类型、方向逐层找关联。定向查询不读全图，不从高连接的“我”节点无差别展开；全量浏览和可视化按 visualization.md 完整读取图。
 3. 按固定快照分页读正文，必要时 source 回查原文。本地纯计算 search 是中英文子串匹配而非向量搜索；模糊问题生成别名/不同表述，结合领域枚举，一次搜索无结果不能证明不存在。
 4. 同轮分页和多跳固定同一 commit，版本变化则复核受影响查询。next_offset 非空说明还有下一页。

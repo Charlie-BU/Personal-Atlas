@@ -1,6 +1,6 @@
 # 记录与 JSON 图协议 v1
 
-权威数据为远端仓库 vault.json、records/、sources/、operations/；用户要求归档时，skill/personal-atlas/ 可保存 Skill 静态副本并纳入清单；连接配置与凭据仍位于 Skill 外。graph/、manifests/ 为可完全重建的确定性生成物，无额外数据库作为唯一信息源。
+以下所有内部路径都相对仓库的 `atlas/`，实际远端读写路径需加 `atlas/` 前缀。权威数据为远端仓库 atlas/vault.json、records/、sources/、operations/；用户要求归档时，skill/personal-atlas/ 可保存 Skill 静态副本并纳入清单；连接配置与凭据仍位于 Skill 外。graph/、manifests/ 为可完全重建的确定性生成物，无额外数据库作为唯一信息源。
 
 ## 记录
 
