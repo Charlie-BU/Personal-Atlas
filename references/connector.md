@@ -4,7 +4,7 @@
 
 ## 连接与快照
 
-1. 解析外部配置，包括当前上下文与上层 plugin 说明；必要信息齐全即可继续，本机 config.json 不可访问不阻塞。仅所有可用来源仍无仓库地址时提示补充。无分支先查询仓库默认分支。
+1. 按 [storage.md](storage.md) 解析配置；必要信息齐全即可连接，不要求本机文件。
 2. 实际查询目标分支 HEAD，固定 commit 读取 atlas/vault.json 和 atlas/graph/root.json。
 3. 解析实际工具返回，检查 schema_version=1、vault 非 initializing、vault.id=graph.vault_id。配置 expected_vault_id 时再匹配。错误标记、业务错误及缺失内容均算失败，不以工具完成提示代替成功。
 4. 报告 snapshot、remote_checked=true、verification=entrypoint_only。仅入口可读不等于全库验证。查询继续读取相关记录。
@@ -28,6 +28,4 @@
 
 不直接逐文件 update records 后补图，避免产生不一致版本。工具缺少安全提交能力或当前环境没有受信任的校验能力时，说明具体写入限制，仍继续授权的查询。不同工具账号/权限分别诊断，不静默切换身份。
 
-## 共享仓库发布
-
-只读取、校验和修改 atlas/。首次初始化不要求仓库为空，只要求目标 atlas/ 缺失或为空；已存在有效资料库复用，不兼容内容报告冲突。prepared 文件与删除路径均带 atlas/ 前缀，工具以现有仓库树为基底应用局部变更，保留其他所有路径。整个仓库 HEAD 用作 base_commit；任意 Skill 推进分支后均需重读、核对并重建提案，不强推。入口成功只说明 Atlas 可读，不能据此声称其他 Skill 目录已被查询。
+共享仓库的目录隔离、路径和基线规则见 [storage.md](storage.md#路径与提交边界)；操作包及发布、回读、结果不明时的处理见 [mutations.md](mutations.md#事务与失败)。入口成功不代表其他 Skill 目录已被查询。

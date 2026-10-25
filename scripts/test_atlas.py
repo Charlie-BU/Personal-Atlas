@@ -247,6 +247,47 @@ class AtlasCalculationTests(unittest.TestCase):
         with self.assertRaises(AtlasError):
             atlas.apply_plan(damaged, payload['plan'])
 
+    def test_domain_filename_prefix_is_reserved(self):
+        with self.assertRaisesRegex(AtlasError, 'domain-- is reserved'):
+            self.apply([self.put(self.record('domain--life'))])
+
+    def test_mutations_generate_graph_once_and_reject_corruption(self):
+        with patch.object(atlas, 'derive', wraps=atlas.derive) as generate:
+            self.apply([self.put(self.record('once'))])
+            self.assertEqual(generate.call_count, 1)
+        for command in [('ingest', '--name', 'second.txt'), ('archive-skill',)]:
+            with patch.object(atlas, 'derive', wraps=atlas.derive) as generate:
+                self.run_cli(*command, data=b'A second synthetic source.')
+                self.assertEqual(generate.call_count, 1)
+        root = self.api.snapshot()
+        paths = [p for p in root if p.startswith(('atlas/graph/', 'atlas/manifests/'))]
+        for path in paths:
+            with self.subTest(path=path):
+                damaged = atlas.Snapshot(dict(root), root.commit)
+                value = json.loads(damaged[path])
+                if isinstance(value, dict):
+                    if path.endswith('root.json'):
+                        value['content_revision'] = 'bad'
+                    elif '/nodes/' in path:
+                        value['summary'] = 'changed'
+                    elif '/adjacency/' in path:
+                        value['edges'] = [] if value['edges'] else [{'from': 'bad'}]
+                    else:
+                        value[next(iter(value))] = 'bad'
+                else:
+                    value.append('missing')
+                damaged[path] = atlas.encoded(value)
+                with self.assertRaises((AtlasError, KeyError)):
+                    atlas.checked(damaged)
+        # Missing or orphan generated files cannot pass write-time validation.
+        for path in paths:
+            damaged = atlas.Snapshot({p: v for p, v in root.items() if p != path}, root.commit)
+            with self.subTest(missing=path), self.assertRaises((AtlasError, KeyError)):
+                atlas.checked(damaged)
+        damaged = atlas.Snapshot({**root, 'atlas/graph/orphan.json': b'{}'}, root.commit)
+        with self.assertRaises(AtlasError):
+            atlas.checked(damaged)
+
     def test_snapshot_and_path_validation(self):
         with self.assertRaises(AtlasError):
             atlas.Snapshot({'../outside': b''}, 'a' * 40)

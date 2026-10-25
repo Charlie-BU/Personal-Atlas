@@ -20,3 +20,11 @@ jobs:
           node-version: '22'
       - run: python -B -m unittest discover -s scripts -p 'test_*.py' -v
       - run: python -B examples/build_demo.py --output /tmp/personal-atlas-demo.html
+      - name: Install browser test tools
+        if: matrix.python == '3.13'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/atlas-browser" --no-package-lock playwright@1.56.1
+          "$RUNNER_TEMP/atlas-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Test real browser interactions
+        if: matrix.python == '3.13'
+        run: NODE_PATH="$RUNNER_TEMP/atlas-browser/node_modules" node scripts/test_browser.cjs /tmp/personal-atlas-demo.html

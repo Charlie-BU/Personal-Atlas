@@ -60,10 +60,6 @@ def digest(value):
     return hashlib.sha256(data_bytes(value)).hexdigest()
 
 
-def head(root):
-    return root.commit
-
-
 def owned(path):
     return path in {"vault.json", ".gitignore"} or path.startswith(CANONICAL + GENERATED)
 
@@ -178,6 +174,7 @@ def records_from(files):
             require(field in meta, "Missing record field: " + field + " in " + path)
         rid = meta["id"]
         require(isinstance(rid, str) and ID.fullmatch(rid), "Invalid record ID")
+        require(not rid.startswith("domain--"), "Record ID prefix domain-- is reserved for domain nodes")
         require(rid not in records, "Duplicate record ID: " + rid)
         require(meta["type"] in KINDS and path == record_path(meta), "Wrong record type/path")
         require(meta["status"] in STATUSES, "Invalid status")
@@ -216,8 +213,8 @@ def pages(items, size=80):
     return [items[i:i + size] for i in range(0, len(items), size)] or [[]]
 
 
-def derive(files):
-    """Generate a complete, deterministic graph; originals remain authoritative."""
+def graph_model(files):
+    """Validate authoritative files and build the shared graph model."""
     records = records_from(files)
     vault = json.loads(data_bytes(files["vault.json"]))
     require(vault.get("schema_version") == VERSION, "Unsupported vault schema version")
@@ -297,6 +294,12 @@ def derive(files):
     # Deduplicate identical edges, but retain independent locators.
     edges = sorted({json.dumps(e, sort_keys=True, ensure_ascii=False): e for e in edges}.values(),
                    key=lambda e: (e["from"], e["type"], e["to"], e.get("locator", "")))
+    return vault, records, nodes, edges
+
+
+def derive(files):
+    """Generate a complete, deterministic graph; originals remain authoritative."""
+    vault, records, nodes, edges = graph_model(files)
     adjacency = {rid: {"outgoing": [], "incoming": []} for rid in nodes}
     for edge in edges:
         adjacency[edge["from"]]["outgoing"].append(edge)
@@ -364,13 +367,63 @@ def skill_bundle():
 
 
 def checked(root):
+    """Validate the existing graph against originals without regenerating files."""
     root = atlas_scope(root)
     require(all(owned(p) for p in root), "Unmanaged files inside atlas/; inspect before modifying")
     require("vault.json" in root, "Remote is not a Personal Atlas vault")
-    generated, records = derive(canonical(root))
-    existing = {p for p in root if p.startswith(GENERATED)}
-    require(existing == set(generated) and all(root[p] == v for p, v in generated.items()),
-            "Remote graph/index is stale or corrupt; inspect and run reindex")
+    require("graph/root.json" in root, "Remote graph missing; inspect and run reindex")
+    files = canonical(root)
+    vault, records, nodes, edges = graph_model(files)
+    graph = json.loads(root["graph/root.json"])
+    message = "Remote graph/index is stale or corrupt; inspect and run reindex"
+    hashes = {p: digest(v) for p, v in sorted(files.items())}
+    require(graph["content_revision"] == digest(encoded(hashes)), message)
+    require(graph["schema_version"] == VERSION and graph["vault_id"] == vault["id"] and
+            graph["record_count"] == len(records) and graph["node_count"] == len(nodes) and
+            graph["edge_count"] == len(edges) and
+            graph["domains"] == sorted(n for n in nodes if n.startswith("domain:")), message)
+    expected = {"graph/root.json"}
+    node_pages = []
+    for i, part in enumerate(pages(list(hashes.items()))):
+        path = "manifests/files/{:05}.json".format(i)
+        expected.add(path)
+        require(root.get(path) == encoded(dict(part)), message)
+    for i, part in enumerate(pages(list(sorted(nodes)))):
+        path = "graph/node-pages/{:05}.json".format(i)
+        expected.add(path)
+        node_pages.append(path)
+        require(root.get(path) == encoded(part), message)
+    require(graph["node_pages"] == node_pages, message)
+    timed = sorted((r["meta"] for r in records.values()
+                    if r["meta"]["temporal"]["mode"] != "none"), key=time_key, reverse=True)
+    timeline = []
+    for i, part in enumerate(pages([m["id"] for m in timed])):
+        path = "graph/timeline/{:05}.json".format(i)
+        expected.add(path)
+        timeline.append(path)
+        require(root.get(path) == encoded(part), message)
+    require(graph["timeline_pages"] == timeline and graph["timeline_order"] ==
+            "semantic time descending; unknown last; none excluded", message)
+    require(graph["incomplete_sources"] == sum(r["meta"].get("source", {}).get("coverage") in
+            {"partial", "failed", "unprocessed"} for r in records.values()), message)
+    adjacency = {rid: {"outgoing": [], "incoming": []} for rid in nodes}
+    for edge in edges:
+        adjacency[edge["from"]]["outgoing"].append(edge)
+        adjacency[edge["to"]]["incoming"].append(edge)
+    for rid, node in nodes.items():
+        path = "graph/nodes/" + rid.replace(":", "--") + ".json"
+        expected.add(path)
+        stored = json.loads(root[path])
+        require({k: v for k, v in stored.items() if k != "adjacency"} == node, message)
+        for direction in ("outgoing", "incoming"):
+            refs = []
+            for i, part in enumerate(pages(adjacency[rid][direction])):
+                path = "graph/adjacency/{}/{}-{:05}.json".format(rid.replace(":", "--"), direction, i)
+                expected.add(path)
+                refs.append({"path": path, "count": len(part)})
+                require(json.loads(root[path]) == {"node": rid, "direction": direction, "edges": part}, message)
+            require(stored["adjacency"][direction] == refs, message)
+    require({p for p in root if p.startswith(GENERATED)} == expected, message)
     return root, records
 
 
@@ -411,7 +464,7 @@ def publish(root, proposed, message):
     root = atlas_scope(root)
     Snapshot(proposed, root.commit)  # Validate every output path before prefixing.
     require(all(owned(p) for p in proposed), "Unexpected file in operation")
-    return {"status": "prepared", "base_commit": head(root), "message": message,
+    return {"status": "prepared", "base_commit": root.commit, "message": message,
             "base_path": ATLAS_PREFIX,
             "files_base64": {ATLAS_PREFIX + p: base64.b64encode(v).decode("ascii")
                              for p, v in proposed.items() if p not in root or root[p] != v},
@@ -422,7 +475,7 @@ def initialize(root):
     root = atlas_scope(root)
     if root:
         checked(root)
-        return {"status": "already_initialized", "commit": head(root),
+        return {"status": "already_initialized", "commit": root.commit,
                 "verification": "supplied_files", "remote_confirmed": False}
     vault = {"schema_version": VERSION, "id": uid("vault"), "created_at": now(),
              "phase": "ready", "storage": "git"}
@@ -484,8 +537,8 @@ def apply_plan(root, plan):
     if op_path in files:
         prior = json.loads(data_bytes(files[op_path]))
         require(prior.get("plan_sha256") == plan_hash, "Operation ID reused with different content")
-        return {"status": "already_applied", "commit": head(root), "remote_confirmed": False}
-    require(plan.get("base_commit") == head(root), "Stale base_commit; inspect changes and rebuild plan")
+        return {"status": "already_applied", "commit": root.commit, "remote_confirmed": False}
+    require(plan.get("base_commit") == root.commit, "Stale base_commit; inspect changes and rebuild plan")
     require(isinstance(plan.get("changes"), list) and plan["changes"], "Empty change plan")
     proposed = canonical(files)
     touched, deleted, deleted_hashes = set(), [], []
@@ -519,7 +572,7 @@ def apply_plan(root, plan):
         else:
             raise AtlasError("Unknown change action: " + str(action))
     proposed[op_path] = encoded({"id": plan["operation_id"], "plan_sha256": plan_hash,
-                                  "recorded_at": now(), "base_commit": head(root),
+                                  "recorded_at": now(), "base_commit": root.commit,
                                   "changed_ids": sorted(touched), "deleted_ids": deleted,
                                   "deleted_source_hashes": deleted_hashes})
     derived, _ = derive(proposed)  # A dangling edge/source blocks the entire operation.
@@ -592,7 +645,7 @@ def query(root, records, args):
             if score and (args.match == "any" or len(matches) == len(terms)):
                 hits.append({**summary(r), "score": score, "matched_terms": matches})
         items = sorted(hits, key=lambda r: (-r["score"], r["id"]))
-    return {"snapshot": head(root), "selection": args.command,
+    return {"snapshot": root.commit, "selection": args.command,
             "scope": {"type": getattr(args, "kind", None), "domain": args.domain,
                       "status": args.status, "retracted_included": args.include_retracted},
             **page_result(items, args)}
@@ -618,7 +671,7 @@ def neighbors(root, records, args):
                     continue
                 edges.append({"direction": direction, **edge,
                               "neighbor": summary(record) if record else {"id": other}})
-    return {"snapshot": head(root), "node": {k: v for k, v in node.items() if k != "adjacency"},
+    return {"snapshot": root.commit, "node": {k: v for k, v in node.items() if k != "adjacency"},
             **page_result(edges, args)}
 
 
@@ -633,7 +686,7 @@ def ingest(root, args, content):
     for record in records.values():
         if record["meta"].get("source", {}).get("sha256") == content_hash:
             return {"status": "already_imported", "source_id": record["meta"]["id"],
-                    "commit": head(root), "remote_confirmed": False}
+                    "commit": root.commit, "remote_confirmed": False}
     for path in files:
         if path.startswith("operations/"):
             operation = json.loads(files[path])

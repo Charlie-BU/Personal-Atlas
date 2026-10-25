@@ -63,7 +63,7 @@ python3 -B <skill>/scripts/atlas.py --stdin apply
 ## 事务与失败
 
 1. 从远端固定快照校验 base_commit、记录旧哈希和现有目录。
-2. 在内存构造完整提案，检查格式、时间、来源、覆盖单元、ID 和关系。
+2. 在内存直接校验旧快照的权威文件、哈希清单、节点、双向邻接、分页和时间线，不为验证重新生成旧图；构造完整提案并检查格式、时间、来源、覆盖单元、ID 和关系。
 3. 确定性生成图，准备变更文件与删除列表，再由现有工具生成同一个 commit。
 4. 再核对分支，使用 force=false 发布。并发变化时停止，不覆盖别人的提交。
 5. 读取远端 HEAD 确认后报告 remote_saved；响应丢失时报告 remote_outcome_unknown，再按原 operation_id 与原内容核查重试。
@@ -91,4 +91,4 @@ apply/verify/reindex/ingest/归档需要 atlas/ 内完整文件清单及内容�
 
 可用命令：init、apply、ingest、verify、reindex、archive-skill、status、graph、search、list、read、source、neighbors、timeline、visualize。archive-skill 仅在用户要求归档时使用；无 Python 可用等价受信任校验能力，不能省略结构校验和同提交发布。
 
-宿主必须基于仓库已有树只应用 atlas/ 的变更，完整保留其他路径；不可用子树快照替换仓库根树。计划 base_commit 对应整个仓库的 HEAD；其他目录发生新提交也需重新读取并核对、重建操作包。脚本内部及图中的相对路径以 atlas/ 为根，信封文件路径和正文 URL 则使用真实仓库路径。
+共享仓库发布必须遵循 [storage.md 的路径与提交边界](storage.md#路径与提交边界)。

@@ -101,8 +101,6 @@ select { width: 100%; font-size: 12px; padding: 8px 5px; background: var(--contr
 .result-meta { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
 .result.selected { background: var(--selected); color: var(--accent); }
 .color-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.sidebar-footer { color: var(--muted); font-size: 10px; margin-top: auto; padding-top: 24px; }
-.sidebar-footer button { color: var(--muted); font-size: 11px; display: flex; gap: 6px; align-items: center; padding: 5px 0; }
 .stage { position: relative; overflow: hidden; background: var(--canvas); min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .canvas-toolbar { position: absolute; top: 20px; left: 22px; right: 22px; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; pointer-events: none; }
@@ -173,7 +171,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   .nav-button[aria-pressed="true"] { border-bottom-color: var(--accent); }
   .sidebar details { padding: 11px 0; margin-top: 0; }
   .filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 12px; }
-  .sidebar-footer { padding-top: 0; margin: 0; } .sidebar-footer .export-note { display: none; }
   .results { max-height: 230px; overflow-y: auto; }
   .stage { height: 68dvh; min-height: 420px; }
   .canvas-toolbar { left: 15px; right: 15px; top: 16px; }
@@ -273,8 +270,6 @@ const english = {
   '关系图':'Graph', '时间线':'Timeline', '筛选':'Filters', '领域':'Domain', '记录类型':'Record type',
   '状态':'Status', '关系类型':'Relation type', '记录与领域':'Records & domains',
   '全部领域':'All domains', '全部资料':'All records', '全部状态':'All statuses', '全部关系':'All relations',
-  '完整图与摘要 · 离线可浏览':'Complete graph & summaries · Available offline',
-  '正文链接需联网和仓库访问权限':'Record links require internet and repository access',
   '关联':'Related', '标签':'Labels', '页面主题':'Page theme', '浅色主题':'Light theme', '深色主题':'Dark theme',
   '跟随系统':'Follow system', '搜索记录、摘要或别名':'Search records, summaries or aliases',
   '搜索记录、摘要或别名…':'Search records, summaries or aliases…', '导航与筛选':'Navigation & filters',

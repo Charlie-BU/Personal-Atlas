@@ -18,14 +18,16 @@ def validate(data):
     nodes, edges = data.get('nodes'), data.get('edges')
     require(isinstance(nodes, list) and isinstance(edges, list), 'Nodes and edges required')
     ids = [n.get('id') for n in nodes]
-    require(all(isinstance(i, str) and i for i in ids) and len(set(ids)) == len(ids), 'Duplicate or invalid node ID')
+    require(all(isinstance(i, str) and i for i in ids), 'Invalid node ID')
+    id_set = set(ids)
+    require(len(id_set) == len(ids), 'Duplicate node ID')
     require(len(nodes) == root.get('node_count'), 'Incomplete node inventory')
     require(sum(n.get('type') != 'domain' for n in nodes) == root.get('record_count'), 'Record count mismatch')
     require(sorted(n['id'] for n in nodes if n.get('type') == 'domain') == sorted(root.get('domains', [])), 'Domain inventory mismatch')
     require(len(edges) == root.get('edge_count'), 'Incomplete edge inventory')
     unique = set()
     for edge in edges:
-        require(edge.get('from') in ids and edge.get('to') in ids and isinstance(edge.get('type'), str), 'Dangling or invalid edge')
+        require(edge.get('from') in id_set and edge.get('to') in id_set and isinstance(edge.get('type'), str), 'Dangling or invalid edge')
         key = json.dumps(edge, sort_keys=True, ensure_ascii=False)
         require(key not in unique, 'Duplicate edge')
         unique.add(key)

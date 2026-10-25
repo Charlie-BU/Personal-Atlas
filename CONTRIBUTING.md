@@ -12,8 +12,16 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 python3 -B examples/build_demo.py --output /tmp/personal-atlas-demo.html
 ```
 
-The tests use in-memory snapshots and a simulated commit receiver. Passing them
-does not prove a live Git provider connection or rendered-browser behavior.
+For rendered-browser checks, install Playwright as a development tool and run:
+
+```sh
+npm install --prefix /tmp/atlas-browser --no-package-lock playwright@1.56.1
+/tmp/atlas-browser/node_modules/.bin/playwright install chromium
+NODE_PATH=/tmp/atlas-browser/node_modules node scripts/test_browser.cjs /tmp/personal-atlas-demo.html
+```
+
+CI runs both suites. The tests use synthetic snapshots and a disposable Git
+repository; they do not prove a live Git provider connection.
 Never include personal vaults, credentials, screenshots of real records, or local
 configuration in contributions. Preserve offline HTML export and atomic,
 concurrency-protected writes through host-provided tools.

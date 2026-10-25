@@ -167,6 +167,9 @@ Markdown 记录、原始来源与 JSON 关系图
 python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
+记录 ID 的 `domain--` 前缀保留给领域图文件。写入时直接校验旧图，仅生成一次新图；CI 另用真实浏览器测试自定义下拉菜单。
+
+
 | 路径 | 用途 |
 | --- | --- |
 | `SKILL.md` | Agent 工作流与操作规则 |

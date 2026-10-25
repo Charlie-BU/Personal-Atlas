@@ -200,6 +200,9 @@ or end-to-end acceptance for every host/provider.
 python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
+Record IDs reserve the `domain--` prefix for domain graph files. Writes validate the existing graph directly, then generate the updated graph once. CI also tests custom dropdowns in a real browser.
+
+
 | Path | Purpose |
 | --- | --- |
 | `SKILL.md` | Agent workflow and operating rules |

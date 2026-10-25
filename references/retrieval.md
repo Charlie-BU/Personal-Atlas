@@ -4,7 +4,7 @@
 
 ## 展示选择
 
-“看全量信息”“看 Atlas”“看图/图谱”或浏览关系，优先按 [visualization.md](visualization.md) 交付可交互 HTML，并简述内容范围与缺口。简单事实或具体关系问答可直接用文字回答；信息较多或适合用图探索时，也可在答案中询问用户是否需要 HTML。用户指定其他格式时遵循其选择。图中的完整摘要不等于全部正文或原件，不能降低用户要求的完整程度。
+按 [SKILL.md 的展示方式](../SKILL.md#展示方式) 选择文字或 HTML；HTML 的范围、交付和校验见 [visualization.md](visualization.md)。
 
 ## 工具查询与可选纯计算
 
