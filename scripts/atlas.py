@@ -222,7 +222,7 @@ def graph_model(files):
     for rid, record in records.items():
         m = record["meta"]
         nodes[rid] = {k: m[k] for k in ("id", "type", "title", "summary", "domains",
-                                       "temporal", "status", "basis")}
+                                       "temporal", "status", "basis", "created_at", "updated_at")}
         nodes[rid].update(path=record["path"], sha256=record["sha256"],
                           aliases=m.get("aliases", []),
                           bytes=len(data_bytes(files[record["path"]])))
@@ -414,7 +414,10 @@ def checked(root):
         path = "graph/nodes/" + rid.replace(":", "--") + ".json"
         expected.add(path)
         stored = json.loads(root[path])
-        require({k: v for k, v in stored.items() if k != "adjacency"} == node, message)
+        # Older indexes omitted system timestamps. Validate any present values.
+        expected_node = {k: v for k, v in node.items()
+                         if k not in {"created_at", "updated_at"} or k in stored}
+        require({k: v for k, v in stored.items() if k != "adjacency"} == expected_node, message)
         for direction in ("outgoing", "incoming"):
             refs = []
             for i, part in enumerate(pages(adjacency[rid][direction])):

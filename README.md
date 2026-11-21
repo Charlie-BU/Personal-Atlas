@@ -39,8 +39,8 @@ account, review it when requested, and let Atlas understand and organize it befo
 
 ## See it in action
 
-The fictional demo includes **56 personal records and one source**, organized
-across **17 domains, 74 graph nodes and 227 relationships**. It connects projects,
+The fictional demo includes **56 personal records and four sources**, organized
+across **17 domains, 77 graph nodes and 230 relationships**. It connects projects,
 collaborators, learning, family routines, creative work, travel, decisions, and goals.
 All screenshots below use the English interface; record content remains in its
 original language.

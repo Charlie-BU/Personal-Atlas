@@ -40,6 +40,17 @@ class VisualizationTests(unittest.TestCase):
         self.assertTrue(all('/atlas/records/' in n['url'] for n in data['nodes'] if n.get('url')))
         self.assertEqual(len(data['nodes']), self.data['root']['node_count'])
 
+    def test_legacy_graph_recovers_record_dates(self):
+        f = self.fixture
+        path = 'atlas/graph/nodes/event_a.json'
+        legacy = json.loads(f.api.files[path])
+        expected = {field: legacy.pop(field) for field in ('created_at', 'updated_at')}
+        f.api.files[path] = json.dumps(legacy).encode()
+        from atlas import checked
+        checked(f.api.snapshot())
+        node = next(n for n in collect(f.api.snapshot())['nodes'] if n['id'] == 'event_a')
+        self.assertEqual({field: node[field] for field in expected}, expected)
+
     def test_missing_node_edge_and_bad_incoming_rejected(self):
         for key in ['nodes', 'edges']:
             bad = copy.deepcopy(self.data)

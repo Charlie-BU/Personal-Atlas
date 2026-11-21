@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sys
 from urllib.parse import urlparse
-from atlas import AtlasError, require, atlas_scope, ATLAS_PREFIX
+from atlas import AtlasError, require, atlas_scope, ATLAS_PREFIX, digest, parse_markdown
 
 
 def validate(data):
@@ -55,6 +55,14 @@ def collect(root):
         require(node['id'] == rid, 'Node ID mismatch')
         if node.get('path'):
             node['url'] = root.url(node['path'])
+            if not node.get('updated_at') or not node.get('created_at'):
+                # Legacy graph nodes omitted timestamps. Recover only metadata.
+                record = root.get(node['path'])
+                require(record is not None and digest(record) == node.get('sha256'),
+                        'Missing or mismatched record for legacy node: ' + rid)
+                meta, _ = parse_markdown(record)
+                for field in ('created_at', 'updated_at'):
+                    node[field] = meta[field]
         nodes.append(node)
         for direction, target in [('outgoing', outgoing), ('incoming', incoming)]:
             for ref in node['adjacency'][direction]:

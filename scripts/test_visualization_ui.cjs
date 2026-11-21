@@ -11,6 +11,14 @@ assert.equal(executable.length, 2);
 const data = JSON.parse(dataCode);
 class Element {
   constructor(tag='div') { this.tagName=tag;this.children=[];this.attrs={};this.dataset={};this.style={setProperty:(k,v)=>{this.style[k]=v;}};this.value='';this.hidden=false;this.listeners={};this.className='';this.textContent='';this.open=true;this.classList={add:(n)=>this.className+=' '+n,remove:(n)=>this.className=this.className.split(' ').filter(c=>c!==n).join(' ')}; }
+  get options() { return this.children; }
+  get selectedOptions() { return this.options.filter(option=>option.selected); }
+  get value() { return this.tagName==='select' ? (this.selectedOptions[0]?.value||'') : this._value; }
+  set value(value) {
+    this._value=value;
+    if(this.tagName==='select') for(const option of this.options) option.selected=option.value===value;
+  }
+  after() {}
   append(...items) { this.children.push(...items); }
   replaceChildren(...items) { this.children=[...items]; }
   setAttribute(name,value) { this.attrs[name]=value; }
@@ -25,6 +33,11 @@ class Element {
 function boot({blocked=false,saved=null,savedLanguage=null,systemDark=false,narrow=false}={}) {
   const elements=new Map();
   for(const match of html.matchAll(/\bid="([^"]+)"/g))elements.set(match[1],new Element());
+  for(const id of ['domain','kind','status','relation']){
+    elements.get(id).tagName='select';
+    elements.get(id).previousElementSibling=new Element('label');
+  }
+  elements.get('atlasMark').setAttribute('href',html.match(/id="atlasMark"[^>]+href="([^"]+)"/)[1]);
   elements.get('atlas-data').textContent=dataCode;elements.get('atlas-icons').textContent=iconCode;
   const themeButtons=['themeLight','themeDark','themeSystem'].map((id,i)=>{const e=elements.get(id);e.dataset.themeMode=['light','dark','system'][i];return e;});
   const images=[...html.matchAll(/data-icon="([^"]+)"/g)].map(m=>{const e=new Element('img');e.dataset.icon=m[1];return e;});
@@ -59,7 +72,7 @@ assert.ok(html.includes('<option value="">全部资料</option>'));
 ui.elements.get('kind').value='source';ui.elements.get('kind').dispatch('change');assert.ok(ui.run("visible.every(n=>n.type==='source')"));assert.ok(ui.run('visible.length')>0);
 ui.elements.get('kind').value='';ui.elements.get('kind').dispatch('change');assert.equal(ui.run('visible.length'),withoutSources);
 ui.elements.get('reset').onclick();assert.equal(ui.run('visible.length'),withoutSources);
-assert.ok(ui.images.every(i=>i.src.startsWith('data:image/svg+xml;base64,')));
+assert.ok(ui.images.every(i=>i.src.startsWith(i.dataset.icon==='atlasMark'?'data:image/png;base64,':'data:image/svg+xml;base64,')));
 const colorBefore=ui.run('color(nodes[0])');ui.elements.get('themeDark').onclick();
 assert.equal(ui.root.dataset.theme,'dark');assert.equal(ui.storage.get('personal-atlas.theme'),'dark');assert.notEqual(ui.run('color(nodes[0])'),colorBefore);
 assert.deepEqual([...ui.storage.keys()],['personal-atlas.theme']);

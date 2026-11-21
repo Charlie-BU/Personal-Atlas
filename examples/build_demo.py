@@ -4,6 +4,7 @@ import base64
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import atlas
@@ -89,8 +90,19 @@ def build(output):
         ('language_day','event','双语项目介绍练习完成','language','用三分钟说明花园计划，再根据同伴提问补充证据和范围。','2026-10-12',[('related_to','language'),('related_to','speaking'),('about','mentor')]),
     ]
     raw='\n'.join(title+'：'+summary for _,_,title,_,summary,_,_ in entries).encode()
-    imported=atlas.ingest(snapshot(),SimpleNamespace(name='fictional-demo.txt',title='虚构演示资料 / Fictional demo',summary='全部内容均为虚构，仅用于公开界面演示。',domain=['life']),raw)
-    accept(imported)
+    with patch.object(atlas, 'now', return_value='2026-08-21T10:00:00+00:00'):
+        imported = atlas.ingest(snapshot(), SimpleNamespace(
+            name='fictional-demo.txt', title='社区观察记录整理',
+            summary='全部内容均为虚构，仅用于公开界面演示。', domain=['life']), raw)
+        accept(imported)
+    for day, name, title, domain in [
+        ('2026-08-26', 'fictional-field-notes.txt', '云湾步道观察口述', 'travel'),
+        ('2026-09-04', 'fictional-workshop.txt', '社区工作坊纪要', 'communication'),
+        ('2026-09-18', 'fictional-garden.txt', '城市花园原型讨论', 'technology'),
+    ]:
+        with patch.object(atlas, 'now', return_value=day+'T10:00:00+00:00'):
+            accept(atlas.ingest(snapshot(), SimpleNamespace(
+                name=name, title=title, summary='虚构演示来源。', domain=[domain]), title.encode()))
     changes=[]
     for i,(rid,kind,title,domain,summary,when,relations) in enumerate(entries,1):
         meta={'id':rid,'type':kind,'title':title,'summary':summary,'domains':[domain],
@@ -98,7 +110,17 @@ def build(output):
               'relations':[{'type':t,'target':r} for t,r in relations],
               'evidence':[{'source':imported['source_id'],'locator':'lines:'+str(i)}]}
         changes.append({'action':'put','meta':meta,'body':summary+'\n\n虚构演示资料，不代表真实个人。'})
-    accept(atlas.apply_plan(snapshot(),{'operation_id':'op_public_demo','base_commit':commit,'changes':changes}))
+    with patch.object(atlas, 'now', return_value='2026-09-05T10:00:00+00:00'):
+        accept(atlas.apply_plan(snapshot(), {'operation_id': 'op_public_demo', 'base_commit': commit,
+                                             'changes': changes}))
+    data_before_update = collect(snapshot())
+    records = {node['id']: node for node in data_before_update['nodes'] if node.get('path')}
+    for index, day in enumerate(('2026-09-12', '2026-09-19', '2026-10-03')):
+        batch = [{**change, 'expected_sha256': records[change['meta']['id']]['sha256']}
+                 for change in changes[index*12:(index+1)*12]]
+        with patch.object(atlas, 'now', return_value=day+'T10:00:00+00:00'):
+            accept(atlas.apply_plan(snapshot(), {'operation_id': f'op_demo_update_{index}',
+                                                 'base_commit': commit, 'changes': batch}))
     data=collect(snapshot())
     # Public fixture does not link to a real personal-data repository.
     for node in data['nodes']:
