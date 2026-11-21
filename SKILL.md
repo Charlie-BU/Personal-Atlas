@@ -11,6 +11,10 @@ description: "保存、整理、检索和增删改用户个人资料，以 Markd
 
 首次使用、从零建库或希望完善资料时，读 [onboarding.md](references/onboarding.md)，按介绍、连接检查、远端初始化确认、12 个主题访谈的顺序执行。复用已有配置和访谈进度；允许跳过或指定不保存，纯查询不强制访谈。
 
+## 从其他 Agent 接收资料
+
+从其他 Bot、AI Agent、应用或文档补充人物志时，建议配套使用 [atlas-source-handoff](atlas-source-handoff/SKILL.md)，按其约定准备和审阅第一人称来源稿。Atlas 接收后按本技能的导入和变更规则整理入库。
+
 ## 连接配置与能力检查
 
 本 Skill 不绑定个人、仓库、分支、vault ID 或 Git 托管平台。连接配置与凭据必须在 Skill 外；不把用户配置写入本文件、脚本、示例或发布包。

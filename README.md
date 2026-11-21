@@ -30,6 +30,13 @@ are primarily in Chinese; project documentation is available in both languages.*
 - **Own portable files.** No dedicated hosted Atlas service or vector database
   is required. Git provides version history and a format you can inspect.
 
+## Bring in information from other agents
+
+Use the [Atlas source handoff skill](atlas-source-handoff/SKILL.md) alongside
+Personal Atlas when another bot, agent, or application has information you want
+to add to your portrait. It explains how to turn raw material into a first-person
+account, review it when requested, and let Atlas understand and organize it before saving.
+
 ## See it in action
 
 The fictional demo includes **56 personal records and one source**, organized
